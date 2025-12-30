@@ -13,7 +13,8 @@ struct IdentificationContext: Sendable {
     let baseIdentification: WatchIdentification?
 }
 
-actor WatchIdentificationCoordinator {
+@MainActor
+final class WatchIdentificationCoordinator {
     private let matcher = CatalogMatcher()
 
     func identify(image: UIImage) async throws -> IdentificationRun {

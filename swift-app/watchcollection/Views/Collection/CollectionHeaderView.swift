@@ -61,6 +61,7 @@ struct CollectionHeaderView: View {
                         y: 4
                     )
             }
+            .accessibilityIdentifier("addWatch.addMenuButton")
         }
         .padding(.horizontal, Theme.Spacing.lg)
     }

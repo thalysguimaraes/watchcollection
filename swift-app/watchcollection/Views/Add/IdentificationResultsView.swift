@@ -173,25 +173,13 @@ struct IdentificationResultsView: View {
             }
 
             VStack(spacing: Theme.Spacing.sm) {
-                TextField("Brand", text: Binding(
-                    get: { editableIdentification.brand ?? "" },
-                    set: { editableIdentification.brand = $0.isEmpty ? nil : $0 }
-                ))
+                TextField("Brand", text: binding(\.brand))
                     .textFieldStyle(.roundedBorder)
-                TextField("Model", text: Binding(
-                    get: { editableIdentification.model ?? "" },
-                    set: { editableIdentification.model = $0.isEmpty ? nil : $0 }
-                ))
+                TextField("Model", text: binding(\.model))
                     .textFieldStyle(.roundedBorder)
-                TextField("Reference", text: Binding(
-                    get: { editableIdentification.reference ?? "" },
-                    set: { editableIdentification.reference = $0.isEmpty ? nil : $0 }
-                ))
+                TextField("Reference", text: binding(\.reference))
                     .textFieldStyle(.roundedBorder)
-                TextField("Dial color", text: Binding(
-                    get: { editableIdentification.dialColor ?? "" },
-                    set: { editableIdentification.dialColor = $0.isEmpty ? nil : $0 }
-                ))
+                TextField("Dial color", text: binding(\.dialColor))
                     .textFieldStyle(.roundedBorder)
             }
 

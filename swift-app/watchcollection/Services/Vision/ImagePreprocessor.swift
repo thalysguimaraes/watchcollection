@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import CryptoKit
+import CoreImage
 import CoreImage.CIFilterBuiltins
 
 struct ProcessedImage: @unchecked Sendable {
@@ -10,8 +11,10 @@ struct ProcessedImage: @unchecked Sendable {
     let cacheKey: String
 }
 
-actor ImagePreprocessor {
+@MainActor
+final class ImagePreprocessor {
     static let shared = ImagePreprocessor()
+    private init() {}
 
     func process(
         _ image: UIImage,

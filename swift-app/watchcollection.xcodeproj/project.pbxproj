@@ -8,16 +8,30 @@
 
 /* Begin PBXBuildFile section */
 		7F5823A82EF74B3600FD9BCE /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7F5822A12EF7000000FD9BCE /* GRDB */; };
+		7F5824122EF8000100FD9BCE /* ViewInspector in Frameworks */ = {isa = PBXBuildFile; productRef = 7F5824162EF8000100FD9BCE /* ViewInspector */; };
+		7F5824132EF8000100FD9BCE /* SnapshotTesting in Frameworks */ = {isa = PBXBuildFile; productRef = 7F5824172EF8000100FD9BCE /* SnapshotTesting */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		7F5822872EF6DC2800FD9BCE /* watchcollection.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = watchcollection.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7F5824022EF8000100FD9BCE /* watchcollectionTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = watchcollectionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7F5824032EF8000100FD9BCE /* watchcollectionUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = watchcollectionUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		7F5822892EF6DC2800FD9BCE /* watchcollection */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = watchcollection;
+			sourceTree = "<group>";
+		};
+		7F5824042EF8000100FD9BCE /* watchcollectionTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = watchcollectionTests;
+			sourceTree = "<group>";
+		};
+		7F5824052EF8000100FD9BCE /* watchcollectionUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = watchcollectionUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -31,6 +45,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7F5824072EF8000100FD9BCE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7F5824122EF8000100FD9BCE /* ViewInspector in Frameworks */,
+				7F5824132EF8000100FD9BCE /* SnapshotTesting in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7F58240A2EF8000100FD9BCE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -38,6 +68,8 @@
 			isa = PBXGroup;
 			children = (
 				7F5822892EF6DC2800FD9BCE /* watchcollection */,
+				7F5824042EF8000100FD9BCE /* watchcollectionTests */,
+				7F5824052EF8000100FD9BCE /* watchcollectionUITests */,
 				7F5822882EF6DC2800FD9BCE /* Products */,
 			);
 			sourceTree = "<group>";
@@ -46,6 +78,8 @@
 			isa = PBXGroup;
 			children = (
 				7F5822872EF6DC2800FD9BCE /* watchcollection.app */,
+				7F5824022EF8000100FD9BCE /* watchcollectionTests.xctest */,
+				7F5824032EF8000100FD9BCE /* watchcollectionUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -76,6 +110,54 @@
 			productReference = 7F5822872EF6DC2800FD9BCE /* watchcollection.app */;
 			productType = "com.apple.product-type.application";
 		};
+		7F5824002EF8000100FD9BCE /* watchcollectionTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7F58240C2EF8000100FD9BCE /* Build configuration list for PBXNativeTarget "watchcollectionTests" */;
+			buildPhases = (
+				7F5824062EF8000100FD9BCE /* Sources */,
+				7F5824072EF8000100FD9BCE /* Frameworks */,
+				7F5824082EF8000100FD9BCE /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7F5824142EF8000100FD9BCE /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				7F5824042EF8000100FD9BCE /* watchcollectionTests */,
+			);
+			name = watchcollectionTests;
+			packageProductDependencies = (
+				7F5824162EF8000100FD9BCE /* ViewInspector */,
+				7F5824172EF8000100FD9BCE /* SnapshotTesting */,
+			);
+			productName = watchcollectionTests;
+			productReference = 7F5824022EF8000100FD9BCE /* watchcollectionTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		7F5824012EF8000100FD9BCE /* watchcollectionUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7F58240F2EF8000100FD9BCE /* Build configuration list for PBXNativeTarget "watchcollectionUITests" */;
+			buildPhases = (
+				7F5824092EF8000100FD9BCE /* Sources */,
+				7F58240A2EF8000100FD9BCE /* Frameworks */,
+				7F58240B2EF8000100FD9BCE /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7F5824152EF8000100FD9BCE /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				7F5824052EF8000100FD9BCE /* watchcollectionUITests */,
+			);
+			name = watchcollectionUITests;
+			packageProductDependencies = (
+			);
+			productName = watchcollectionUITests;
+			productReference = 7F5824032EF8000100FD9BCE /* watchcollectionUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -88,6 +170,14 @@
 				TargetAttributes = {
 					7F5822862EF6DC2800FD9BCE = {
 						CreatedOnToolsVersion = 26.2;
+					};
+					7F5824002EF8000100FD9BCE = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 7F5822862EF6DC2800FD9BCE;
+					};
+					7F5824012EF8000100FD9BCE = {
+						CreatedOnToolsVersion = 26.2;
+						TestTargetID = 7F5822862EF6DC2800FD9BCE;
 					};
 				};
 			};
@@ -102,6 +192,8 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				7F5822A02EF7000000FD9BCE /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+				7F5824182EF8000100FD9BCE /* XCRemoteSwiftPackageReference "ViewInspector" */,
+				7F5824192EF8000100FD9BCE /* XCRemoteSwiftPackageReference "swift-snapshot-testing" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7F5822882EF6DC2800FD9BCE /* Products */;
@@ -109,12 +201,28 @@
 			projectRoot = "";
 			targets = (
 				7F5822862EF6DC2800FD9BCE /* watchcollection */,
+				7F5824002EF8000100FD9BCE /* watchcollectionTests */,
+				7F5824012EF8000100FD9BCE /* watchcollectionUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		7F5822852EF6DC2800FD9BCE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7F5824082EF8000100FD9BCE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7F58240B2EF8000100FD9BCE /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -131,7 +239,51 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7F5824062EF8000100FD9BCE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7F5824092EF8000100FD9BCE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		7F5824142EF8000100FD9BCE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7F5822862EF6DC2800FD9BCE /* watchcollection */;
+			targetProxy = 7F58241A2EF8000100FD9BCE /* PBXContainerItemProxy */;
+		};
+		7F5824152EF8000100FD9BCE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7F5822862EF6DC2800FD9BCE /* watchcollection */;
+			targetProxy = 7F58241B2EF8000100FD9BCE /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXContainerItemProxy section */
+		7F58241A2EF8000100FD9BCE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7F58227F2EF6DC2800FD9BCE /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7F5822862EF6DC2800FD9BCE;
+			remoteInfo = watchcollection;
+		};
+		7F58241B2EF8000100FD9BCE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7F58227F2EF6DC2800FD9BCE /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7F5822862EF6DC2800FD9BCE;
+			remoteInfo = watchcollection;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin XCBuildConfiguration section */
 		7F5822902EF6DC2900FD9BCE /* Debug */ = {
@@ -319,6 +471,102 @@
 			};
 			name = Release;
 		};
+		7F58240D2EF8000100FD9BCE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B27B4ED4CL;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nooma.watchcollectionTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/watchcollection.app/watchcollection";
+			};
+			name = Debug;
+		};
+		7F58240E2EF8000100FD9BCE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B27B4ED4CL;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nooma.watchcollectionTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/watchcollection.app/watchcollection";
+			};
+			name = Release;
+		};
+		7F5824102EF8000100FD9BCE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B27B4ED4CL;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nooma.watchcollectionUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = watchcollection;
+			};
+			name = Debug;
+		};
+		7F5824112EF8000100FD9BCE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B27B4ED4CL;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.nooma.watchcollectionUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = watchcollection;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -340,6 +588,24 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		7F58240C2EF8000100FD9BCE /* Build configuration list for PBXNativeTarget "watchcollectionTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7F58240D2EF8000100FD9BCE /* Debug */,
+				7F58240E2EF8000100FD9BCE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7F58240F2EF8000100FD9BCE /* Build configuration list for PBXNativeTarget "watchcollectionUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7F5824102EF8000100FD9BCE /* Debug */,
+				7F5824112EF8000100FD9BCE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -351,6 +617,22 @@
 				minimumVersion = 7.0.0;
 			};
 		};
+		7F5824182EF8000100FD9BCE /* XCRemoteSwiftPackageReference "ViewInspector" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/nalexn/ViewInspector.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.10.3;
+			};
+		};
+		7F5824192EF8000100FD9BCE /* XCRemoteSwiftPackageReference "swift-snapshot-testing" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-snapshot-testing";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.18.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -358,6 +640,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 7F5822A02EF7000000FD9BCE /* XCRemoteSwiftPackageReference "GRDB.swift" */;
 			productName = GRDB;
+		};
+		7F5824162EF8000100FD9BCE /* ViewInspector */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7F5824182EF8000100FD9BCE /* XCRemoteSwiftPackageReference "ViewInspector" */;
+			productName = ViewInspector;
+		};
+		7F5824172EF8000100FD9BCE /* SnapshotTesting */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7F5824192EF8000100FD9BCE /* XCRemoteSwiftPackageReference "swift-snapshot-testing" */;
+			productName = SnapshotTesting;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

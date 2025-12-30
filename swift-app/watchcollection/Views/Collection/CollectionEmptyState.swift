@@ -54,6 +54,7 @@ struct CollectionEmptyState: View {
                     y: 6
                 )
             }
+            .accessibilityIdentifier("addWatch.emptyStateButton")
             .padding(.top, Theme.Spacing.md)
 
             Spacer()

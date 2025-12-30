@@ -85,6 +85,7 @@ struct EditWatchView: View {
                         Button("Cancel") {
                             router.dismiss()
                         }
+                        .accessibilityIdentifier("editWatch.cancelButton")
                     }
                 }
         }

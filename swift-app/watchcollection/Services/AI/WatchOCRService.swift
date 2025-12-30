@@ -13,8 +13,10 @@ struct OCRHints: Sendable {
     }
 }
 
-actor WatchOCRService {
+@MainActor
+final class WatchOCRService {
     static let shared = WatchOCRService()
+    private init() {}
 
     func extractHints(from image: UIImage) async -> OCRHints {
         guard let cgImage = image.cgImage else { return .empty }
@@ -43,8 +45,8 @@ actor WatchOCRService {
 
         let confidence = observations
             .compactMap { $0.topCandidates(1).first?.confidence }
-            .map { Double($0) }
-            .average(default: 0)
+            .map(Double.init)
+            .average(default: 0.0)
 
         return OCRHints(
             rawText: rawText,
