@@ -65,11 +65,10 @@ struct PortfolioSummaryView: View {
 
                 Button {
                     Haptics.light()
-                    withAnimation {
-                        hideValues.toggle()
-                    }
+                    hideValues.toggle()
                 } label: {
                     Image(systemName: hideValues ? "eye.slash" : "eye")
+                        .contentTransition(.symbolEffect(.replace))
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(Theme.Colors.textPrimary)
                         .frame(width: 44, height: 44)
@@ -78,7 +77,6 @@ struct PortfolioSummaryView: View {
                         .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
                 }
                 .buttonStyle(.plain)
-                .symbolEffect(.bounce, value: hideValues)
             }
         }
         .padding(.horizontal, Theme.Spacing.lg)

@@ -10,7 +10,6 @@ struct CollectionListView: View {
     @State private var showDeleteConfirmation = false
     @State private var itemToDelete: CollectionItem?
     @State private var dataService = DataService()
-    @State private var showingSortSheet = false
     @State private var showingAddOptions = false
     @AppStorage("defaultCurrency") private var defaultCurrency = "USD"
 
@@ -74,7 +73,7 @@ struct CollectionListView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                             CollectionHeaderView(
-                                onSortTapped: { showingSortSheet = true },
+                                sortOption: $sortOption,
                                 showingAddOptions: $showingAddOptions,
                                 onAddManually: { router.presentAddWatch() },
                                 onIdentifyWithAI: { router.presentWatchIdentification() }
@@ -165,11 +164,6 @@ struct CollectionListView: View {
             }
         }
         .tint(Theme.Colors.accent)
-        .sheet(isPresented: $showingSortSheet) {
-            SortOptionsSheet(selectedOption: $sortOption, isPresented: $showingSortSheet)
-                .presentationDetents([.height(320)])
-                .presentationDragIndicator(.visible)
-        }
         .confirmationDialog(
             "Delete Watch",
             isPresented: $showDeleteConfirmation,
@@ -202,54 +196,6 @@ struct CollectionListView: View {
         } catch {
             print("Failed to delete item: \(error)")
         }
-    }
-}
-
-struct SortOptionsSheet: View {
-    @Binding var selectedOption: CollectionSortOption
-    @Binding var isPresented: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Sort by")
-                .font(Theme.Typography.sans(.headline, weight: .semibold))
-                .foregroundStyle(Theme.Colors.textPrimary)
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.top, Theme.Spacing.lg)
-                .padding(.bottom, Theme.Spacing.md)
-
-            ForEach(CollectionSortOption.allCases, id: \.self) { option in
-                Button {
-                    Haptics.selection()
-                    withAnimation(Theme.Animation.smooth) {
-                        selectedOption = option
-                    }
-                    isPresented = false
-                } label: {
-                    HStack {
-                        Image(systemName: option.icon)
-                            .font(.system(size: 16))
-                            .frame(width: 24)
-                            .foregroundStyle(selectedOption == option ? Theme.Colors.accent : Theme.Colors.textSecondary)
-                        Text(option.rawValue)
-                            .font(Theme.Typography.sans(.body))
-                        Spacer()
-                        if selectedOption == option {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Theme.Colors.accent)
-                        }
-                    }
-                    .foregroundStyle(Theme.Colors.textPrimary)
-                    .padding(.horizontal, Theme.Spacing.lg)
-                    .padding(.vertical, Theme.Spacing.md)
-                    .background(selectedOption == option ? Theme.Colors.accent.opacity(0.1) : Color.clear)
-                }
-            }
-
-            Spacer()
-        }
-        .background(Theme.Colors.surface)
     }
 }
 

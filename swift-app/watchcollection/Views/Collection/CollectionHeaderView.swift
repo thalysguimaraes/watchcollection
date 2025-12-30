@@ -1,18 +1,25 @@
 import SwiftUI
 
 struct CollectionHeaderView: View {
-    let onSortTapped: () -> Void
-    @Binding var showingAddOptions: Bool
+    @Binding var sortOption: CollectionSortOption
     let onAddManually: () -> Void
     let onIdentifyWithAI: () -> Void
 
     var body: some View {
         HStack {
-            Button {
-                Haptics.light()
-                onSortTapped()
+            Menu {
+                ForEach(CollectionSortOption.allCases, id: \.self) { option in
+                    Button {
+                        Haptics.selection()
+                        withAnimation(Theme.Animation.smooth) {
+                            sortOption = option
+                        }
+                    } label: {
+                        Label(option.rawValue, systemImage: sortOption == option ? "checkmark" : option.icon)
+                    }
+                }
             } label: {
-                Image(systemName: "line.3.horizontal")
+                Image(systemName: "line.3.horizontal.decrease")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(Theme.Colors.textPrimary)
                     .frame(width: 44, height: 44)
@@ -27,9 +34,20 @@ struct CollectionHeaderView: View {
 
             Spacer()
 
-            Button {
-                Haptics.medium()
-                showingAddOptions = true
+            Menu {
+                Button {
+                    Haptics.medium()
+                    onAddManually()
+                } label: {
+                    Label("Add Manually", systemImage: "square.and.pencil")
+                }
+
+                Button {
+                    Haptics.medium()
+                    onIdentifyWithAI()
+                } label: {
+                    Label("Identify with AI", systemImage: "sparkles")
+                }
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 18, weight: .semibold))
@@ -43,29 +61,15 @@ struct CollectionHeaderView: View {
                         y: 4
                     )
             }
-            .popover(isPresented: $showingAddOptions, arrowEdge: .top) {
-                AddOptionsPopover(
-                    onAddManually: {
-                        showingAddOptions = false
-                        onAddManually()
-                    },
-                    onIdentifyWithAI: {
-                        showingAddOptions = false
-                        onIdentifyWithAI()
-                    }
-                )
-                .presentationCompactAdaptation(.popover)
-            }
         }
         .padding(.horizontal, Theme.Spacing.lg)
     }
 }
 
 #Preview {
-    @Previewable @State var showingAddOptions = false
+    @Previewable @State var sortOption: CollectionSortOption = .dateAdded
     CollectionHeaderView(
-        onSortTapped: {},
-        showingAddOptions: $showingAddOptions,
+        sortOption: $sortOption,
         onAddManually: {},
         onIdentifyWithAI: {}
     )

@@ -231,6 +231,12 @@ class WatchChartsFetcher:
         self._brightdata_endpoint = brightdata_endpoint or DEFAULT_BRIGHTDATA_ENDPOINT
         self._brightdata_format = brightdata_format or DEFAULT_BRIGHTDATA_FORMAT
         self._brightdata_client: Optional[httpx.AsyncClient] = None
+        self._fs_enabled = bool(os.getenv("USE_FLARESOLVERR")) or bool(os.getenv("FLARESOLVERR_URL"))
+        self._fs_client: Optional[FlareSolverrClient] = FlareSolverrClient() if self._fs_enabled else None
+        self._fs_sem = asyncio.Semaphore(1)
+        self._fs_lock = asyncio.Lock()
+        self._fs_failures = 0
+        self._fs_disable_until = 0.0
 
         if proxy_settings:
             self._pw_proxy = {"server": proxy_settings.server}
@@ -350,6 +356,8 @@ class WatchChartsFetcher:
         if self._pw:
             await self._pw.close()
             self._pw = None
+        if self._fs_client:
+            await asyncio.to_thread(self._fs_client.destroy_session)
 
     def _ac_disabled(self) -> bool:
         return self._ac_disable_until and time.monotonic() < self._ac_disable_until
@@ -376,6 +384,19 @@ class WatchChartsFetcher:
             self._pw_disable_until = time.monotonic() + 60
             self._pw_failures = 0
             print(f"Playwright paused for 1m after repeated failures ({exc}).")
+
+    def _fs_disabled(self) -> bool:
+        return self._fs_disable_until and time.monotonic() < self._fs_disable_until
+
+    def _note_fs_failure(self, exc: Exception) -> None:
+        self._fs_failures += 1
+        if self._fs_failures >= 3 and not self._fs_disabled():
+            self._fs_disable_until = time.monotonic() + 120
+            self._fs_failures = 0
+            print(f"FlareSolverr paused for 2m after repeated failures ({exc}).")
+
+    def _flaresolverr_available(self) -> bool:
+        return self._fs_client is not None and not self._fs_disabled()
 
     def _apply_solution(self, solution: dict) -> None:
         user_agent = solution.get("userAgent")
@@ -681,6 +702,39 @@ class WatchChartsFetcher:
                 return text
             except Exception as exc:
                 self._note_pw_failure(exc)
+                return None
+
+    async def _ensure_flaresolverr_session(self) -> bool:
+        if not self._flaresolverr_available():
+            return False
+        async with self._fs_lock:
+            if self._fs_client and self._fs_client.session_id:
+                return True
+            try:
+                await asyncio.to_thread(self._fs_client.create_session)
+                return True
+            except Exception as exc:
+                self._note_fs_failure(exc)
+                return False
+
+    async def _fetch_via_flaresolverr(
+        self,
+        url: str,
+        headers: Optional[dict] = None,
+        max_timeout: int = 60000,
+    ) -> Optional[str]:
+        if not self._flaresolverr_available():
+            return None
+        async with self._fs_sem:
+            ready = await self._ensure_flaresolverr_session()
+            if not ready or not self._fs_client:
+                return None
+            try:
+                text = await asyncio.to_thread(self._fs_client.get, url, max_timeout, headers)
+                self._fs_failures = 0
+                return text
+            except Exception as exc:
+                self._note_fs_failure(exc)
                 return None
 
     async def fetch(
@@ -1417,6 +1471,40 @@ async def fetch_price_history(
     region_id: Optional[int] = None,
     session_id: Optional[str] = None,
 ) -> Optional[MarketPriceHistory]:
+    async def fetch_via_flaresolverr() -> Optional[MarketPriceHistory]:
+        if not fetcher._flaresolverr_available():
+            return None
+        fs_html = await fetcher._fetch_via_flaresolverr(full_url)
+        if not fs_html or is_challenge_html(fs_html):
+            return None
+        fs_soup = make_soup(fs_html)
+        fs_csrf = extract_csrf_token(fs_soup, fs_html)
+        if not fs_csrf:
+            return None
+        fs_default_region, fs_variation_id = extract_price_history_context(fs_soup)
+        fs_region = region_id if region_id is not None else fs_default_region
+        fs_key = build_appraisal_key(fs_region)
+        fs_chart_url = (
+            f"{base_url}/charts/watch/{watch_id}.json?type=trend&key={fs_key}"
+            f"&variation_id={fs_variation_id}&mobile=0"
+        )
+        fs_headers = build_chart_headers(fs_csrf, full_url)
+        fs_text = await fetcher._fetch_via_flaresolverr(fs_chart_url, headers=fs_headers)
+        if not fs_text:
+            return None
+        try:
+            fs_payload = json.loads(fs_text)
+        except json.JSONDecodeError:
+            return None
+        fs_currency = extract_sys_currency(fs_html)
+        return parse_price_history_payload(
+            payload=fs_payload,
+            region_id=fs_region,
+            variation_id=fs_variation_id,
+            key=fs_key,
+            currency=fs_currency,
+        )
+
     if not soup.select_one("#priceHistoryChartTabContent"):
         return None
 
@@ -1431,6 +1519,7 @@ async def fetch_price_history(
     key = build_appraisal_key(region_id)
     chart_url = f"{base_url}/charts/watch/{watch_id}.json?type=trend&key={key}&variation_id={variation_id}&mobile=0"
     headers = build_chart_headers(csrf_token, full_url)
+    attempted_flaresolverr = False
 
     try:
         text = await fetcher.fetch_with_headers(
@@ -1440,6 +1529,12 @@ async def fetch_price_history(
             session_id=session_id,
         )
     except Exception as exc:
+        history = await fetch_via_flaresolverr()
+        attempted_flaresolverr = True
+        if history:
+            print(f"[{watch_id}] price history via flaresolverr")
+            return history
+
         if fetcher._backend == "brightdata":
             pw_text = await fetcher._fetch_via_playwright_text(chart_url)
             if pw_text:
@@ -1470,17 +1565,38 @@ async def fetch_price_history(
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as exc:
+        if not attempted_flaresolverr:
+            history = await fetch_via_flaresolverr()
+            attempted_flaresolverr = True
+            if history:
+                print(f"[{watch_id}] price history via flaresolverr")
+                return history
         print(f"[{watch_id}] price history invalid JSON: {exc}")
         return None
 
     currency = extract_sys_currency(html)
-    return parse_price_history_payload(
+    history = parse_price_history_payload(
         payload=payload,
         region_id=region_id,
         variation_id=variation_id,
         key=key,
         currency=currency,
     )
+    if history:
+        return history
+
+    if not attempted_flaresolverr:
+        error_message = None
+        if isinstance(payload, dict):
+            error_message = payload.get("message") or payload.get("error")
+        if error_message:
+            history = await fetch_via_flaresolverr()
+            attempted_flaresolverr = True
+            if history:
+                print(f"[{watch_id}] price history via flaresolverr")
+                return history
+
+    return None
 
 
 async def fetch_price_history_task(

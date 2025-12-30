@@ -4,7 +4,7 @@ import UIKit
 actor WatchAIService {
     static let shared = WatchAIService()
 
-    private static let geminiAPIKey = "AIzaSyB8jKQqzcukEtj8rrlfXiocob1TsT4_f_8"
+    private static let geminiAPIKey = ProcessInfo.processInfo.environment["GEMINI_API_KEY"] ?? ""
     private static let geminiEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
     private static let visionPrompt = """
