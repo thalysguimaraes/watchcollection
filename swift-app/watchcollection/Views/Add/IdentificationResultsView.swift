@@ -173,13 +173,13 @@ struct IdentificationResultsView: View {
             }
 
             VStack(spacing: Theme.Spacing.sm) {
-                TextField("Brand", text: binding(\.$brand))
+                TextField("Brand", text: binding(\.brand))
                     .textFieldStyle(.roundedBorder)
-                TextField("Model", text: binding(\.$model))
+                TextField("Model", text: binding(\.model))
                     .textFieldStyle(.roundedBorder)
-                TextField("Reference", text: binding(\.$reference))
+                TextField("Reference", text: binding(\.reference))
                     .textFieldStyle(.roundedBorder)
-                TextField("Dial color", text: binding(\.$dialColor))
+                TextField("Dial color", text: binding(\.dialColor))
                     .textFieldStyle(.roundedBorder)
             }
 

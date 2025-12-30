@@ -1,6 +1,8 @@
 import Foundation
 import UIKit
 import CryptoKit
+import CoreImage
+import CoreImage.CIFilterBuiltins
 
 struct ProcessedImage: @unchecked Sendable {
     let uploadData: Data
@@ -9,8 +11,10 @@ struct ProcessedImage: @unchecked Sendable {
     let cacheKey: String
 }
 
-actor ImagePreprocessor {
+@MainActor
+final class ImagePreprocessor {
     static let shared = ImagePreprocessor()
+    private init() {}
 
     func process(
         _ image: UIImage,
@@ -95,7 +99,7 @@ private extension UIImage {
 
         let blurFilter = CIFilter.gaussianBlur()
         blurFilter.inputImage = ciImage
-        blurFilter.radius = radius
+        blurFilter.radius = Float(radius)
 
         guard let blurred = blurFilter.outputImage?.cropped(to: ciImage.extent) else {
             return nil

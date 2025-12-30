@@ -20,6 +20,18 @@ xcodebuild -project swift-app/watchcollection.xcodeproj -scheme watchcollection 
 xcodebuild -project swift-app/watchcollection.xcodeproj -scheme watchcollection test
 ```
 
+### Testing Principles (Swift app)
+- Prefer **Swift Testing** (`import Testing`) for new unit/integration tests; avoid adding new XCTestCase subclasses unless UI automation.
+- **ViewInspector** for SwiftUI view assertions; avoid accessing UI state via `@State`—inspect rendered hierarchy instead.
+- **SnapshotTesting** for visual regressions; keep `record` off by default. Baselines live in `swift-app/watchcollectionTests/__Snapshots__/`.
+- **XCUITest** only for end-to-end flows; every tappable control should expose an accessibilityIdentifier.
+- Keep tests deterministic: no real network; use local fixtures/GRDB data; stub haptics/timers where needed.
+- Default simulator for CI/local: `platform=iOS Simulator,name=iPhone 17`. Run:  
+  `xcodebuild test -project swift-app/watchcollection.xcodeproj -scheme watchcollection -destination 'platform=iOS Simulator,name=iPhone 17'`
+- When adding snapshots: temporarily set `recordSnapshots = true` inside the specific test file, run once, then revert to false and commit the new `__Snapshots__` asset.
+- Organize tests by layer: `watchcollectionTests` (unit + snapshots), `watchcollectionUITests` (UI automation).
+- Add accessibility IDs for any control the UI tests touch (buttons, toggles, text fields, menu items).
+
 ### API Server
 ```bash
 cd api

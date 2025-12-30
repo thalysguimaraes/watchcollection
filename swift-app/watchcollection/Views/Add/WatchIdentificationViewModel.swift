@@ -61,7 +61,9 @@ final class WatchIdentificationViewModel {
 
     func recordSelection(_ match: IdentificationMatch, identification: WatchIdentification) {
         guard let context = lastContext else { return }
-        feedbackStore.recordSelection(match: match, identification: identification, imageKey: context.processedImage.cacheKey)
+        Task {
+            await feedbackStore.recordSelection(match: match, identification: identification, imageKey: context.processedImage.cacheKey)
+        }
     }
 
     func retry() {

@@ -18,7 +18,8 @@ struct EvalResult: Sendable {
     let success: Bool
 }
 
-actor OfflineEvalRunner {
+@MainActor
+final class OfflineEvalRunner {
     private let coordinator = WatchIdentificationCoordinator()
 
     func runAll(from path: String = "swift-app/watchcollection/Evaluation/evalset.json") async -> [EvalResult] {

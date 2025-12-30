@@ -51,6 +51,7 @@ struct AddWatchFlow: View {
                         Haptics.light()
                         dismiss()
                     }
+                    .accessibilityIdentifier("addWatch.cancelButton")
                     .foregroundStyle(Theme.Colors.textSecondary)
                 }
 
@@ -68,6 +69,7 @@ struct AddWatchFlow: View {
                             }
                             .foregroundStyle(Theme.Colors.accent)
                         }
+                        .accessibilityIdentifier("addWatch.backButton")
                     }
                 }
             }
@@ -240,6 +242,7 @@ struct CatalogSearchStep: View {
             TextField("Search brand, model, or reference...", text: $viewModel.searchQuery)
                 .font(Theme.Typography.sans(.body))
                 .focused($searchFieldFocused)
+                .accessibilityIdentifier("addWatch.searchField")
                 .onChange(of: searchFieldFocused) { _, focused in
                     withAnimation(Theme.Animation.quick) {
                         isSearchFocused = focused
@@ -264,6 +267,7 @@ struct CatalogSearchStep: View {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(Theme.Colors.textSecondary)
                 }
+                .accessibilityIdentifier("addWatch.clearSearchButton")
             }
         }
         .padding(Theme.Spacing.md)
@@ -361,6 +365,7 @@ struct CatalogSearchStep: View {
             LazyVStack(spacing: Theme.Spacing.md) {
                 ForEach(Array(localResults.enumerated()), id: \.element.watchModel.id) { index, result in
                     SearchResultRow(result: result)
+                        .accessibilityIdentifier("addWatch.searchResult.\(result.watchModel.id)")
                         .onTapGesture {
                             Haptics.medium()
                             viewModel.selectedCatalogWatch = result
@@ -395,6 +400,7 @@ struct CatalogSearchStep: View {
             .background(Theme.Colors.accent.opacity(0.1))
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.button))
         }
+        .accessibilityIdentifier("addWatch.manualEntryButton")
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.bottom, Theme.Spacing.lg)
     }
@@ -606,9 +612,9 @@ struct QuickDetailsStep: View {
     private var manualInfoSection: some View {
         FormSection(title: "Watch Info", icon: "clock.fill") {
             VStack(spacing: Theme.Spacing.md) {
-                FormTextField(label: "Brand", text: $viewModel.manualBrand, required: true)
-                FormTextField(label: "Model", text: $viewModel.manualModel, required: true)
-                FormTextField(label: "Reference", text: $viewModel.manualReference, required: false)
+                FormTextField(label: "Brand", text: $viewModel.manualBrand, required: true, accessibilityIdentifier: "addWatch.brandField")
+                FormTextField(label: "Model", text: $viewModel.manualModel, required: true, accessibilityIdentifier: "addWatch.modelField")
+                FormTextField(label: "Reference", text: $viewModel.manualReference, required: false, accessibilityIdentifier: "addWatch.referenceField")
             }
         }
     }
@@ -647,6 +653,7 @@ struct QuickDetailsStep: View {
                         .onChange(of: viewModel.hasBox) { _, _ in
                             Haptics.toggle()
                         }
+                        .accessibilityIdentifier("addWatch.hasBoxToggle")
                 }
 
                 HStack {
@@ -658,6 +665,7 @@ struct QuickDetailsStep: View {
                         .onChange(of: viewModel.hasPapers) { _, _ in
                             Haptics.toggle()
                         }
+                        .accessibilityIdentifier("addWatch.hasPapersToggle")
                 }
             }
         }
@@ -694,11 +702,13 @@ struct QuickDetailsStep: View {
                         .background(Theme.Colors.surface)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.button))
                     }
+                    .accessibilityIdentifier("addWatch.currencyMenu")
 
                     CurrencyTextField(
                         currency: Currency.from(code: viewModel.purchaseCurrency) ?? .usd,
                         value: $viewModel.purchasePrice
                     )
+                    .accessibilityIdentifier("addWatch.purchasePriceField")
                     .padding(Theme.Spacing.sm)
                     .background(Theme.Colors.surface)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.button))
@@ -713,6 +723,7 @@ struct QuickDetailsStep: View {
                     displayedComponents: .date
                 )
                 .tint(Theme.Colors.accent)
+                .accessibilityIdentifier("addWatch.purchaseDatePicker")
             }
         }
     }
@@ -720,7 +731,7 @@ struct QuickDetailsStep: View {
     private var optionalSection: some View {
         FormSection(title: "Optional", icon: "doc.text.fill") {
             VStack(spacing: Theme.Spacing.md) {
-                FormTextField(label: "Serial Number", text: $viewModel.serialNumber, required: false)
+                FormTextField(label: "Serial Number", text: $viewModel.serialNumber, required: false, accessibilityIdentifier: "addWatch.serialNumberField")
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                     Text("Notes")
@@ -733,6 +744,7 @@ struct QuickDetailsStep: View {
                         .scrollContentBackground(.hidden)
                         .background(Theme.Colors.surface)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.button))
+                        .accessibilityIdentifier("addWatch.notesField")
                 }
             }
         }
@@ -755,6 +767,7 @@ struct QuickDetailsStep: View {
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.button))
         }
         .disabled(!canSave)
+        .accessibilityIdentifier("addWatch.saveButton")
         .padding(.horizontal, Theme.Spacing.lg)
         .padding(.vertical, Theme.Spacing.md)
         .background(.ultraThinMaterial)
@@ -803,6 +816,11 @@ struct FormTextField: View {
     let label: String
     @Binding var text: String
     let required: Bool
+    var accessibilityIdentifier: String? = nil
+
+    private var fallbackAccessibilityId: String {
+        "formField.\(label.replacingOccurrences(of: " ", with: ""))"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
@@ -820,6 +838,7 @@ struct FormTextField: View {
                 .padding(Theme.Spacing.sm)
                 .background(Theme.Colors.surface)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.button))
+                .accessibilityIdentifier(accessibilityIdentifier ?? fallbackAccessibilityId)
         }
     }
 }
@@ -843,6 +862,7 @@ struct ConditionChip: View {
                         .stroke(isSelected ? Color.clear : Theme.Colors.surface, lineWidth: 1)
                 )
         }
+        .accessibilityIdentifier("addWatch.condition.\(condition.abbreviation.lowercased())")
         .buttonStyle(.plain)
     }
 

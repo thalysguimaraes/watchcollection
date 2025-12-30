@@ -21,6 +21,34 @@
                ReferencedContainer = "container:watchcollection.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "7F5824002EF8000100FD9BCE"
+               BuildableName = "watchcollectionTests.xctest"
+               BlueprintName = "watchcollectionTests"
+               ReferencedContainer = "container:watchcollection.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "7F5824012EF8000100FD9BCE"
+               BuildableName = "watchcollectionUITests.xctest"
+               BlueprintName = "watchcollectionUITests"
+               ReferencedContainer = "container:watchcollection.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -28,7 +56,38 @@
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES"
-      shouldAutocreateTestPlan = "YES">
+      shouldAutocreateTestPlan = "NO">
+      <Testables>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "7F5824002EF8000100FD9BCE"
+               BuildableName = "watchcollectionTests.xctest"
+               BlueprintName = "watchcollectionTests"
+               ReferencedContainer = "container:watchcollection.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "7F5824012EF8000100FD9BCE"
+               BuildableName = "watchcollectionUITests.xctest"
+               BlueprintName = "watchcollectionUITests"
+               ReferencedContainer = "container:watchcollection.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+      </Testables>
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "7F5822862EF6DC2800FD9BCE"
+            BuildableName = "watchcollection.app"
+            BlueprintName = "watchcollection"
+            ReferencedContainer = "container:watchcollection.xcodeproj">
+         </BuildableReference>
+      </MacroExpansion>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"

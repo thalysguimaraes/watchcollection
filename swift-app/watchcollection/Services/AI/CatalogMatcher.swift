@@ -1,6 +1,7 @@
 import Foundation
 
-struct CatalogMatcher {
+@MainActor
+final class CatalogMatcher {
     private let dataService: DataService
     private let claudeMatcher = ClaudeMatcher()
 
