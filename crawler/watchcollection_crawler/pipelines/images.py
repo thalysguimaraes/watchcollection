@@ -30,7 +30,7 @@ try:
 except Exception:
     h2 = None
 
-from watchcollection_crawler.core.flaresolverr import FlareSolverrClient
+from watchcollection_crawler.core.curl_impersonate import CurlImpersonateClient
 from watchcollection_crawler.core.paths import WATCHCHARTS_OUTPUT_DIR, WATCHCHARTS_IMAGES_DIR
 from watchcollection_crawler.utils.strings import slugify
 
@@ -209,13 +209,13 @@ class ProgressTracker:
 async def fetch_detail_image_url(
     detail_url: str,
     client: httpx.AsyncClient,
-    flare_client: Optional[FlareSolverrClient],
-    use_flaresolverr: bool,
+    curl_client: Optional[CurlImpersonateClient],
+    use_curl_impersonate: bool,
     timeout: float,
 ) -> Optional[str]:
     try:
-        if use_flaresolverr and flare_client:
-            html = await asyncio.to_thread(flare_client.get, detail_url, int(timeout * 1000))
+        if use_curl_impersonate and curl_client:
+            html = await asyncio.to_thread(curl_client.get, detail_url, None, True, int(timeout))
         else:
             resp = await client.get(detail_url, timeout=timeout)
             html = resp.text
@@ -266,7 +266,7 @@ async def upload_to_r2(
 async def handle_model(
     model: dict,
     client: httpx.AsyncClient,
-    flare_client: Optional[FlareSolverrClient],
+    curl_client: Optional[CurlImpersonateClient],
     tracker: ProgressTracker,
     config: PipelineConfig,
     r2_client: Optional[Any],
@@ -296,8 +296,8 @@ async def handle_model(
                 image_url = await fetch_detail_image_url(
                     detail_url=detail_url,
                     client=client,
-                    flare_client=flare_client,
-                    use_flaresolverr=config.use_flaresolverr,
+                    curl_client=curl_client,
+                    use_curl_impersonate=config.use_flaresolverr,
                     timeout=config.download_timeout,
                 ) or ""
 
@@ -355,7 +355,7 @@ async def worker(
     name: str,
     queue: asyncio.Queue,
     client: httpx.AsyncClient,
-    flare_client: Optional[FlareSolverrClient],
+    curl_client: Optional[CurlImpersonateClient],
     tracker: ProgressTracker,
     config: PipelineConfig,
     r2_client: Optional[Any],
@@ -366,7 +366,7 @@ async def worker(
         try:
             if model is None:
                 return
-            await handle_model(model, client, flare_client, tracker, config, r2_client, upload_sem)
+            await handle_model(model, client, curl_client, tracker, config, r2_client, upload_sem)
         finally:
             queue.task_done()
 
@@ -473,9 +473,7 @@ async def run_async(args: argparse.Namespace) -> None:
         timeout=timeout,
         http2=bool(h2),
     ) as client:
-        flare_client = FlareSolverrClient() if config.use_flaresolverr else None
-        if flare_client:
-            flare_client.create_session()
+        curl_client = CurlImpersonateClient() if config.use_flaresolverr else None
 
         r2_client = None
         if upload_enabled:
@@ -498,7 +496,7 @@ async def run_async(args: argparse.Namespace) -> None:
                     f"worker-{i}",
                     queue,
                     client,
-                    flare_client,
+                    curl_client,
                     tracker,
                     config,
                     r2_client,
@@ -514,8 +512,6 @@ async def run_async(args: argparse.Namespace) -> None:
             for _ in workers:
                 queue.put_nowait(None)
             await asyncio.gather(*workers, return_exceptions=True)
-            if flare_client:
-                flare_client.destroy_session()
 
     await tracker.finalize(manifest_file, failed_file)
 
@@ -548,7 +544,7 @@ def main() -> None:
     parser.add_argument("--checkpoint-interval", type=float, default=CHECKPOINT_INTERVAL_DEFAULT, help="Save progress at least every N seconds")
     parser.add_argument("--no-reuse-local", action="store_true", help="Ignore cached local images")
     parser.add_argument("--no-detail-fallback", action="store_true", help="Skip detail-page fallback for missing image_url")
-    parser.add_argument("--no-flaresolverr", action="store_true", help="Disable FlareSolverr for detail fallback")
+    parser.add_argument("--no-flaresolverr", action="store_true", help="Disable curl-impersonate for detail fallback")
     parser.add_argument("--no-upload", action="store_true", help="Skip R2 upload")
     args = parser.parse_args()
 

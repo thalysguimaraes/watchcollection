@@ -13,7 +13,7 @@ try:
 except Exception:
     load_dotenv = None
 
-from watchcollection_crawler.core.flaresolverr import FlareSolverrClient
+from watchcollection_crawler.core.curl_impersonate import CurlImpersonateClient
 from watchcollection_crawler.core.paths import WATCHCHARTS_OUTPUT_DIR
 from watchcollection_crawler.sources import chrono24 as chrono24_source
 
@@ -69,9 +69,8 @@ def fetch_listings(
     brand: str,
     reference: str,
     limit: int,
-    use_flaresolverr: bool,
     currency: Optional[str],
-    client: Optional[FlareSolverrClient],
+    client: Optional[CurlImpersonateClient],
 ) -> List[Dict[str, Any]]:
     listings: List[Dict[str, Any]] = []
     page = 1
@@ -80,7 +79,6 @@ def fetch_listings(
             brand,
             reference,
             limit=limit,
-            use_flaresolverr=use_flaresolverr,
             client=client,
             page=page,
             currency=currency,
@@ -118,7 +116,6 @@ def enrich_models(
     listings_per_model: int,
     min_listings: int,
     currency: Optional[str],
-    use_flaresolverr: bool,
     overwrite: bool,
     limit: Optional[int],
     sleep_s: float,
@@ -137,79 +134,71 @@ def enrich_models(
     skipped = 0
     missing_prices = 0
 
-    client = None
-    if use_flaresolverr:
-        client = FlareSolverrClient()
-        client.create_session()
+    client = CurlImpersonateClient()
 
-    try:
-        for idx, model in enumerate(models, 1):
-            ref = model.get("reference")
-            name = model.get("full_name", "")
-            if not ref:
-                print(f"[{idx}/{len(models)}] missing reference -> skip", flush=True)
+    for idx, model in enumerate(models, 1):
+        ref = model.get("reference")
+        name = model.get("full_name", "")
+        if not ref:
+            print(f"[{idx}/{len(models)}] missing reference -> skip", flush=True)
+            skipped += 1
+            continue
+
+        if model.get("market_price_usd") and not overwrite:
+            existing_source = (model.get("market_price_source") or "").lower()
+            if existing_source == "chrono24":
+                print(f"[{idx}/{len(models)}] {ref} {name} - skip (has chrono24 market price)", flush=True)
                 skipped += 1
                 continue
 
-            if model.get("market_price_usd") and not overwrite:
-                existing_source = (model.get("market_price_source") or "").lower()
-                if existing_source == "chrono24":
-                    print(f"[{idx}/{len(models)}] {ref} {name} - skip (has chrono24 market price)", flush=True)
-                    skipped += 1
-                    continue
+        print(f"[{idx}/{len(models)}] {ref} {name}", flush=True)
 
-            print(f"[{idx}/{len(models)}] {ref} {name}", flush=True)
+        listings = fetch_listings(
+            brand=brand_name,
+            reference=ref,
+            limit=listings_per_model,
+            currency=currency,
+            client=client,
+        )
 
-            listings = fetch_listings(
-                brand=brand_name,
-                reference=ref,
-                limit=listings_per_model,
-                use_flaresolverr=use_flaresolverr,
-                currency=currency,
-                client=client,
-            )
+        prices = []
+        for listing in listings:
+            value = parse_price_value(listing.get("price"))
+            if value is not None:
+                prices.append(value)
 
-            prices = []
-            for listing in listings:
-                value = parse_price_value(listing.get("price"))
-                if value is not None:
-                    prices.append(value)
-
-            if len(prices) < min_listings:
-                missing_prices += 1
-                print(f"  - only {len(prices)} prices (min {min_listings})", flush=True)
-                if sleep_s:
-                    time.sleep(sleep_s)
-                continue
-
-            stats = calculate_price_stats(prices)
-            if not stats:
-                missing_prices += 1
-                print("  - no usable prices", flush=True)
-                if sleep_s:
-                    time.sleep(sleep_s)
-                continue
-
-            model["market_price_usd"] = stats["median"]
-            model["market_price_min_usd"] = stats["min"]
-            model["market_price_max_usd"] = stats["max"]
-            model["market_price_listings"] = stats["count"]
-            model["market_price_updated_at"] = datetime.now(timezone.utc).isoformat()
-            model["market_price_source"] = "chrono24"
-            model["chrono24_currency"] = currency
-            model["chrono24_listings_count"] = len(listings)
-
-            updated += 1
-            print(
-                f"  - median ${stats['median']:,} (min ${stats['min']:,}, max ${stats['max']:,}, n={stats['count']})",
-                flush=True,
-            )
-
+        if len(prices) < min_listings:
+            missing_prices += 1
+            print(f"  - only {len(prices)} prices (min {min_listings})", flush=True)
             if sleep_s:
                 time.sleep(sleep_s)
-    finally:
-        if client:
-            client.destroy_session()
+            continue
+
+        stats = calculate_price_stats(prices)
+        if not stats:
+            missing_prices += 1
+            print("  - no usable prices", flush=True)
+            if sleep_s:
+                time.sleep(sleep_s)
+            continue
+
+        model["market_price_usd"] = stats["median"]
+        model["market_price_min_usd"] = stats["min"]
+        model["market_price_max_usd"] = stats["max"]
+        model["market_price_listings"] = stats["count"]
+        model["market_price_updated_at"] = datetime.now(timezone.utc).isoformat()
+        model["market_price_source"] = "chrono24"
+        model["chrono24_currency"] = currency
+        model["chrono24_listings_count"] = len(listings)
+
+        updated += 1
+        print(
+            f"  - median ${stats['median']:,} (min ${stats['min']:,}, max ${stats['max']:,}, n={stats['count']})",
+            flush=True,
+        )
+
+        if sleep_s:
+            time.sleep(sleep_s)
 
     data["chrono24_market_updated_at"] = datetime.now(timezone.utc).isoformat()
     data["chrono24_market_updated_count"] = updated
@@ -228,8 +217,7 @@ def main() -> None:
     parser.add_argument("--min-listings", type=int, default=6, help="Minimum prices required to save market price")
     parser.add_argument("--currency", type=str, default="USD", help="Currency code for Chrono24 search")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing market prices")
-    parser.add_argument("--no-flaresolverr", action="store_true", help="Disable FlareSolverr")
-    parser.add_argument("--sleep", type=float, default=0.5, help="Sleep between models (seconds)")
+    parser.add_argument("--sleep", type=float, default=2.0, help="Sleep between models (seconds, default 2.0 for rate limiting)")
     parser.add_argument("--dry-run", action="store_true", help="Only show matches without saving")
     parser.add_argument("--env-file", type=str, help="Path to .env file")
 
@@ -258,7 +246,6 @@ def main() -> None:
         listings_per_model=args.listings,
         min_listings=args.min_listings,
         currency=args.currency,
-        use_flaresolverr=not args.no_flaresolverr,
         overwrite=args.overwrite,
         limit=args.limit,
         sleep_s=args.sleep,
