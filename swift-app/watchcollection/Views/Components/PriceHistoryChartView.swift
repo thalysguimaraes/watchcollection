@@ -56,24 +56,29 @@ struct PriceHistoryChartView: View {
     var body: some View {
         VStack(spacing: Theme.Spacing.md) {
             HStack {
-                ForEach(PriceHistoryRange.allCases, id: \.self) { range in
-                    Button {
-                        Haptics.selection()
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedRange = range
-                        }
-                    } label: {
-                        Text(range.rawValue)
-                            .font(Theme.Typography.sans(.caption, weight: .medium))
-                            .padding(.horizontal, Theme.Spacing.sm)
-                            .padding(.vertical, Theme.Spacing.xs)
-                            .background(selectedRange == range ? Theme.Colors.accent : Color.clear)
-                            .foregroundStyle(selectedRange == range ? Theme.Colors.onAccent : Theme.Colors.textSecondary)
-                            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.button))
-                    }
-                    .buttonStyle(.plain)
-                }
+                Text("Price History")
+                    .font(Theme.Typography.sans(.subheadline))
+                    .foregroundStyle(Theme.Colors.textSecondary)
                 Spacer()
+                HStack(spacing: Theme.Spacing.xs) {
+                    ForEach(PriceHistoryRange.allCases, id: \.self) { range in
+                        Button {
+                            Haptics.selection()
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selectedRange = range
+                            }
+                        } label: {
+                            Text(range.rawValue)
+                                .font(Theme.Typography.sans(.caption, weight: .medium))
+                                .padding(.horizontal, Theme.Spacing.sm)
+                                .padding(.vertical, Theme.Spacing.xs)
+                                .background(selectedRange == range ? Theme.Colors.accent : Color.clear)
+                                .foregroundStyle(selectedRange == range ? Theme.Colors.onAccent : Theme.Colors.textSecondary)
+                                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.button))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
 
             if filteredData.isEmpty {
