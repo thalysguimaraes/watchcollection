@@ -49,8 +49,7 @@ struct MainTabView: View {
                     .environment(router)
                     .environment(dataRefreshStore)
             case .editWatch(let item):
-                EditWatchView(item: item)
-                    .environment(router)
+                EditWatchSheet(item: item)
                     .environment(dataRefreshStore)
             case .photoViewer(let photo):
                 PhotoViewerSheet(photo: photo)
@@ -72,25 +71,6 @@ struct MainTabView: View {
     }
 }
 
-struct EditWatchView: View {
-    let item: CollectionItem
-    @Environment(NavigationRouter.self) private var router
-
-    var body: some View {
-        NavigationStack {
-            Text("Edit \(item.displayName)")
-                .navigationTitle("Edit Watch")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            router.dismiss()
-                        }
-                        .accessibilityIdentifier("editWatch.cancelButton")
-                    }
-                }
-        }
-    }
-}
 
 struct PhotoViewerSheet: View {
     let photo: WatchPhoto
