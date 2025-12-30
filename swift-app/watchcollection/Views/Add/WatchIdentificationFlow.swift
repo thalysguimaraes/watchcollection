@@ -36,9 +36,10 @@ struct WatchIdentificationFlow: View {
                         matches: matches,
                         identification: identification,
                         onSelectMatch: { match in
+                            viewModel.recordSelection(match, identification: identification)
                             router.dismiss()
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                                router.presentQuickAddToCollection(match.watchModel, brand: match.brand)
+                                router.presentQuickAddToCollection(match.watch.watchModel, brand: match.watch.brand)
                             }
                         },
                         onSearchManually: {
@@ -46,6 +47,9 @@ struct WatchIdentificationFlow: View {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                 router.presentAddWatch()
                             }
+                        },
+                        onRefine: { updated in
+                            viewModel.refineMatches(with: updated)
                         },
                         onRetry: {
                             withAnimation(Theme.Animation.smooth) {
@@ -68,6 +72,9 @@ struct WatchIdentificationFlow: View {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                                 router.presentAddWatch()
                             }
+                        },
+                        onRefine: { updated in
+                            viewModel.refineMatches(with: updated)
                         },
                         onRetry: {
                             withAnimation(Theme.Animation.smooth) {

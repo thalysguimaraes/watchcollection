@@ -1,15 +1,35 @@
 import SwiftUI
 
 struct IdentificationResultsView: View {
-    let matches: [WatchModelWithBrand]
+    let matches: [IdentificationMatch]
     let identification: WatchIdentification
-    let onSelectMatch: (WatchModelWithBrand) -> Void
+    let onSelectMatch: (IdentificationMatch) -> Void
     let onSearchManually: () -> Void
+    let onRefine: (WatchIdentification) -> Void
     let onRetry: () -> Void
 
     @State private var iconScale: CGFloat = 0.5
     @State private var headerOpacity: Double = 0
     @State private var showContent = false
+    @State private var editableIdentification: WatchIdentification
+    @State private var isRefining = false
+
+    init(
+        matches: [IdentificationMatch],
+        identification: WatchIdentification,
+        onSelectMatch: @escaping (IdentificationMatch) -> Void,
+        onSearchManually: @escaping () -> Void,
+        onRefine: @escaping (WatchIdentification) -> Void,
+        onRetry: @escaping () -> Void
+    ) {
+        self.matches = matches
+        self.identification = identification
+        self.onSelectMatch = onSelectMatch
+        self.onSearchManually = onSearchManually
+        self.onRefine = onRefine
+        self.onRetry = onRetry
+        _editableIdentification = State(initialValue: identification)
+    }
 
     var body: some View {
         ScrollView {
@@ -21,6 +41,7 @@ struct IdentificationResultsView: View {
                 }
 
                 aiDescriptionSection
+                refineSection
 
                 actionsSection
             }
@@ -37,6 +58,9 @@ struct IdentificationResultsView: View {
             withAnimation(Theme.Animation.smooth.delay(0.2)) {
                 showContent = true
             }
+        }
+        .onChange(of: identification.rawDescription) { _, _ in
+            editableIdentification = identification
         }
     }
 
@@ -72,8 +96,8 @@ struct IdentificationResultsView: View {
                 .tracking(0.5)
                 .opacity(showContent ? 1 : 0)
 
-            ForEach(Array(matches.enumerated()), id: \.element.watchModel.id) { index, match in
-                MatchCard(watch: match) {
+            ForEach(Array(matches.enumerated()), id: \.element.watch.watchModel.id) { index, match in
+                MatchCard(match: match) {
                     onSelectMatch(match)
                 }
                 .opacity(showContent ? 1 : 0)
@@ -125,6 +149,7 @@ struct IdentificationResultsView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.Colors.textSecondary)
                     .lineSpacing(4)
+                    .padding(.top, Theme.Spacing.xs)
             }
             .padding(Theme.Spacing.md)
             .background(Theme.Colors.surface)
@@ -133,6 +158,57 @@ struct IdentificationResultsView: View {
         .opacity(showContent ? 1 : 0)
         .offset(y: showContent ? 0 : 15)
         .animation(Theme.Animation.smooth.delay(0.35), value: showContent)
+    }
+
+    private var refineSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            HStack {
+                Image(systemName: "pencil.and.outline")
+                    .foregroundStyle(Theme.Colors.accent)
+                Text("Refine & Re-run")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.textSecondary)
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+            }
+
+            VStack(spacing: Theme.Spacing.sm) {
+                TextField("Brand", text: binding(\.$brand))
+                    .textFieldStyle(.roundedBorder)
+                TextField("Model", text: binding(\.$model))
+                    .textFieldStyle(.roundedBorder)
+                TextField("Reference", text: binding(\.$reference))
+                    .textFieldStyle(.roundedBorder)
+                TextField("Dial color", text: binding(\.$dialColor))
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            Button {
+                guard !isRefining else { return }
+                isRefining = true
+                onRefine(editableIdentification)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    isRefining = false
+                }
+            } label: {
+                HStack {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                    Text(isRefining ? "Updating..." : "Update Matches")
+                }
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.Colors.onAccent)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(Theme.Colors.accent)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+        }
+        .padding(Theme.Spacing.md)
+        .background(Theme.Colors.card)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .opacity(showContent ? 1 : 0)
+        .offset(y: showContent ? 0 : 10)
+        .animation(Theme.Animation.smooth.delay(0.38), value: showContent)
     }
 
     private var actionsSection: some View {
@@ -177,7 +253,7 @@ struct IdentificationResultsView: View {
 }
 
 private struct MatchCard: View {
-    let watch: WatchModelWithBrand
+    let match: IdentificationMatch
     let onSelect: () -> Void
 
     @State private var isPressed = false
@@ -188,7 +264,7 @@ private struct MatchCard: View {
             onSelect()
         } label: {
             HStack(spacing: Theme.Spacing.md) {
-                if let imageURL = watch.watchModel.catalogImageURL {
+                if let imageURL = match.watch.watchModel.catalogImageURL {
                     AsyncImage(url: URL(string: imageURL)) { phase in
                         switch phase {
                         case .success(let image):
@@ -217,25 +293,37 @@ private struct MatchCard: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    if let brand = watch.brand {
+                    if let brand = match.watch.brand {
                         Text(brand.name)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(Theme.Colors.textSecondary)
                     }
-                    Text(watch.watchModel.displayName)
+                    Text(match.watch.watchModel.displayName)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.Colors.textPrimary)
                         .lineLimit(1)
-                    Text(watch.watchModel.reference)
+                    Text(match.watch.watchModel.reference)
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.Colors.textTertiary)
+
+                    if let reason = match.reason, !reason.isEmpty {
+                        Text(reason)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.Colors.textSecondary)
+                            .lineLimit(2)
+                    }
                 }
 
                 Spacer()
 
-                Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(Theme.Colors.accent)
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text("\(Int(match.confidence * 100))%")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Theme.Colors.accent)
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(Theme.Colors.accent)
+                }
             }
             .padding(Theme.Spacing.md)
             .background(Theme.Colors.card)
@@ -270,5 +358,14 @@ private struct DetailRow: View {
                 .foregroundStyle(Theme.Colors.textPrimary)
             Spacer()
         }
+    }
+}
+
+private extension IdentificationResultsView {
+    func binding(_ keyPath: WritableKeyPath<WatchIdentification, String?>) -> Binding<String> {
+        Binding<String>(
+            get: { editableIdentification[keyPath: keyPath] ?? "" },
+            set: { newValue in editableIdentification[keyPath: keyPath] = newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : newValue }
+        )
     }
 }

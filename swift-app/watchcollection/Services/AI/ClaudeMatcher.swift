@@ -71,10 +71,12 @@ actor ClaudeMatcher {
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            #if DEBUG
             print("Claude API error: \(statusCode)")
             if let errorText = String(data: data, encoding: .utf8) {
                 print("Error body: \(errorText)")
             }
+            #endif
             throw ClaudeMatcherError.apiError(statusCode)
         }
 
@@ -84,7 +86,9 @@ actor ClaudeMatcher {
             return []
         }
 
+        #if DEBUG
         print("Claude matcher response: \(content)")
+        #endif
 
         return parseMatches(content, candidates: Array(candidates.prefix(30)))
     }
@@ -108,7 +112,8 @@ actor ClaudeMatcher {
             return IdentificationMatch(
                 watch: candidate,
                 confidence: match.confidence,
-                matchType: .reference
+                matchType: .reference,
+                reason: match.reason
             )
         }
     }
