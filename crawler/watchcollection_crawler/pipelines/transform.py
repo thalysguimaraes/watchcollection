@@ -110,7 +110,10 @@ def transform_model(wc_model: dict, image_manifest: dict, brand_name: str, brand
     if wc_model.get("market_price_usd"):
         market_price = {
             "median_usd": wc_model["market_price_usd"],
-            "updated_at": datetime.now().isoformat(),
+            "min_usd": wc_model.get("market_price_min_usd"),
+            "max_usd": wc_model.get("market_price_max_usd"),
+            "listings": wc_model.get("market_price_listings"),
+            "updated_at": wc_model.get("market_price_updated_at") or datetime.now().isoformat(),
         }
 
     wc_id = str(wc_model.get("watchcharts_id", ""))

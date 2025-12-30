@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		7F5822B22EF8000200FD9BCE /* Secrets.plist in Resources */ = {isa = PBXBuildFile; fileRef = 7F5822B12EF8000100FD9BCE /* Secrets.plist */; };
 		7F5823A82EF74B3600FD9BCE /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7F5822A12EF7000000FD9BCE /* GRDB */; };
 		7F5824122EF8000100FD9BCE /* ViewInspector in Frameworks */ = {isa = PBXBuildFile; productRef = 7F5824162EF8000100FD9BCE /* ViewInspector */; };
 		7F5824132EF8000100FD9BCE /* SnapshotTesting in Frameworks */ = {isa = PBXBuildFile; productRef = 7F5824172EF8000100FD9BCE /* SnapshotTesting */; };
@@ -14,6 +15,8 @@
 
 /* Begin PBXFileReference section */
 		7F5822872EF6DC2800FD9BCE /* watchcollection.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = watchcollection.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7F5822B02EF8000000FD9BCE /* Secrets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Secrets.xcconfig; sourceTree = "<group>"; };
+		7F5822B12EF8000100FD9BCE /* Secrets.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Secrets.plist; sourceTree = "<group>"; };
 		7F5824022EF8000100FD9BCE /* watchcollectionTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = watchcollectionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7F5824032EF8000100FD9BCE /* watchcollectionUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = watchcollectionUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -67,6 +70,8 @@
 		7F58227E2EF6DC2800FD9BCE = {
 			isa = PBXGroup;
 			children = (
+				7F5822B02EF8000000FD9BCE /* Secrets.xcconfig */,
+				7F5822B12EF8000100FD9BCE /* Secrets.plist */,
 				7F5822892EF6DC2800FD9BCE /* watchcollection */,
 				7F5824042EF8000100FD9BCE /* watchcollectionTests */,
 				7F5824052EF8000100FD9BCE /* watchcollectionUITests */,
@@ -212,6 +217,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7F5822B22EF8000200FD9BCE /* Secrets.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -409,6 +415,7 @@
 		};
 		7F5822932EF6DC2900FD9BCE /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7F5822B02EF8000000FD9BCE /* Secrets.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -417,6 +424,8 @@
 				DEVELOPMENT_TEAM = B27B4ED4CL;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access is needed to identify watches using AI";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Photo library access is needed to select watch photos";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -441,6 +450,7 @@
 		};
 		7F5822942EF6DC2900FD9BCE /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 7F5822B02EF8000000FD9BCE /* Secrets.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -449,6 +459,8 @@
 				DEVELOPMENT_TEAM = B27B4ED4CL;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access is needed to identify watches using AI";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Photo library access is needed to select watch photos";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

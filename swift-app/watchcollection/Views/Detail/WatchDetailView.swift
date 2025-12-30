@@ -49,13 +49,20 @@ struct WatchDetailView: View {
 
                 VStack(spacing: Theme.Spacing.xl) {
                     detailsCard
+                        .padding(.horizontal, Theme.Spacing.lg)
+
                     valuationCard
+                        .padding(.horizontal, Theme.Spacing.lg)
+
+                    if let history = catalogWatch?.priceHistory, !history.isEmpty {
+                        priceChartSection(history: history)
+                    }
 
                     if let notes = item.notes, !notes.isEmpty {
                         notesCard(notes)
+                            .padding(.horizontal, Theme.Spacing.lg)
                     }
                 }
-                .padding(.horizontal, Theme.Spacing.lg)
                 .padding(.top, Theme.Spacing.xl)
                 .padding(.bottom, Theme.Spacing.xxxl)
                 .frame(maxWidth: .infinity)
@@ -150,6 +157,10 @@ struct WatchDetailView: View {
         return Theme.Colors.accent
     }
 
+    private var cardIconColor: Color {
+        heroBrandColor.forChartGradient()
+    }
+
     private var heroSection: some View {
         ZStack(alignment: .bottomLeading) {
             heroBackgroundColor
@@ -233,7 +244,7 @@ struct WatchDetailView: View {
 
     private var detailsCard: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            CardHeader(title: "Details", icon: "info.circle", iconColor: heroBrandColor)
+            CardHeader(title: "Details", icon: "info.circle", iconColor: cardIconColor)
 
             Grid(horizontalSpacing: Theme.Spacing.lg, verticalSpacing: Theme.Spacing.md) {
                 GridRow {
@@ -373,27 +384,22 @@ struct WatchDetailView: View {
     private var valuationCard: some View {
         let hasPurchaseData = item.purchasePriceDecimal != nil
         let hasMarketData = catalogWatch?.marketPriceMedian != nil
-        let hasPriceHistory = catalogWatch?.priceHistory?.isEmpty == false
 
-        if hasPurchaseData || hasMarketData || hasPriceHistory {
+        if hasPurchaseData || hasMarketData {
             VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-                CardHeader(title: "Valuation", icon: "chart.line.uptrend.xyaxis", iconColor: heroBrandColor)
-
+                CardHeader(title: "Valuation", icon: "chart.line.uptrend.xyaxis", iconColor: cardIconColor)
                 valuationSummary
-
-                if let history = catalogWatch?.priceHistory, !history.isEmpty {
-                    Divider()
-                        .padding(.vertical, Theme.Spacing.xs)
-
-                    PriceHistoryChartView(
-                        priceHistory: history,
-                        currencyCode: "USD"
-                    )
-                }
             }
             .padding(Theme.Spacing.xl)
             .background(cardBackground)
         }
+    }
+
+    private func priceChartSection(history: [PriceHistoryPoint]) -> some View {
+        DetailPriceChartView(
+            priceHistory: history,
+            accentColor: cardIconColor
+        )
     }
 
     private var valuationSummary: some View {
@@ -433,7 +439,7 @@ struct WatchDetailView: View {
                         VStack(alignment: .trailing, spacing: 2) {
                             Text(currency.format(marketPriceConverted))
                                 .font(Theme.Typography.sans(.body, weight: .semibold))
-                                .foregroundStyle(Theme.Colors.accent)
+                                .foregroundStyle(Theme.Colors.textPrimary)
 
                             HStack(spacing: 4) {
                                 Image(systemName: isPositive ? "arrow.up.right" : "arrow.down.right")
@@ -456,7 +462,7 @@ struct WatchDetailView: View {
                     Spacer()
                     Text(Currency.usd.format(Decimal(median)))
                         .font(Theme.Typography.sans(.body, weight: .semibold))
-                        .foregroundStyle(Theme.Colors.accent)
+                        .foregroundStyle(Theme.Colors.textPrimary)
                 }
             }
         }
@@ -464,7 +470,7 @@ struct WatchDetailView: View {
 
     private func notesCard(_ notes: String) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
-            CardHeader(title: "Notes", icon: "text.alignleft", iconColor: heroBrandColor)
+            CardHeader(title: "Notes", icon: "text.alignleft", iconColor: cardIconColor)
 
             Text(notes)
                 .font(Theme.Typography.sans(.body))

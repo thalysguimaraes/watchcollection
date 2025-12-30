@@ -115,7 +115,18 @@ private struct SheetButtonStyle: ButtonStyle {
     }
 }
 
-struct CameraView: UIViewControllerRepresentable {
+struct CameraView: View {
+    let onImageCaptured: (UIImage) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        CameraViewRepresentable(onImageCaptured: onImageCaptured, onCancel: onCancel)
+            .background(Color.black)
+            .ignoresSafeArea(.all)
+    }
+}
+
+private struct CameraViewRepresentable: UIViewControllerRepresentable {
     let onImageCaptured: (UIImage) -> Void
     let onCancel: () -> Void
 
@@ -123,6 +134,7 @@ struct CameraView: UIViewControllerRepresentable {
         let picker = UIImagePickerController()
         picker.sourceType = .camera
         picker.delegate = context.coordinator
+        picker.modalPresentationStyle = .fullScreen
         return picker
     }
 

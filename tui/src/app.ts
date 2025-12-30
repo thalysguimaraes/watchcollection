@@ -33,6 +33,7 @@ const PYTHON_BIN = resolvePythonBin();
 const DEFAULT_WATCHCHARTS_MODELS = Number(process.env.TUI_WATCHCHARTS_MODELS || 50);
 const DEFAULT_CHRONO24_LISTINGS = Number(process.env.TUI_CHRONO24_LISTINGS || 40);
 const DEFAULT_CHRONO24_MIN_LISTINGS = Number(process.env.TUI_CHRONO24_MIN_LISTINGS || 6);
+const WATCHCHARTS_COOKIES_FILE = process.env.WATCHCHARTS_COOKIES_FILE || path.join(CRAWLER_DIR, 'watchcharts_cookies.txt');
 
 const LOG_LIMIT = 200;
 const LOG_VIEW_LINES = 9;
@@ -428,25 +429,24 @@ async function runPhase(phase: Phase, brand?: BrandEntry): Promise<boolean> {
 
   if (phase === 'watchcharts' && brand) {
     resetLogs(`[watchcharts] ${brand.slug}`);
-    code = await runCommand(
-      PYTHON_BIN,
-      [
-        '-m',
-        'watchcollection_crawler.pipelines.watchcharts',
-        '--entry-url',
-        brand.entryUrl || '',
-        '--brand',
-        brand.name,
-        '--brand-slug',
-        brand.slug,
-        '--backend',
-        'brightdata',
-        '--models',
-        String(DEFAULT_WATCHCHARTS_MODELS),
-      ],
-      CRAWLER_DIR,
-      '[watchcharts]'
-    );
+    const watchchartsArgs = [
+      '-m',
+      'watchcollection_crawler.pipelines.watchcharts',
+      '--entry-url',
+      brand.entryUrl || '',
+      '--brand',
+      brand.name,
+      '--brand-slug',
+      brand.slug,
+      '--backend',
+      'brightdata',
+      '--models',
+      String(DEFAULT_WATCHCHARTS_MODELS),
+    ];
+    if (fs.existsSync(WATCHCHARTS_COOKIES_FILE)) {
+      watchchartsArgs.push('--cookies-file', WATCHCHARTS_COOKIES_FILE);
+    }
+    code = await runCommand(PYTHON_BIN, watchchartsArgs, CRAWLER_DIR, '[watchcharts]');
   }
 
   if (phase === 'chrono24' && brand) {
@@ -496,6 +496,9 @@ async function runPhase(phase: Phase, brand?: BrandEntry): Promise<boolean> {
       ];
       if (brand.entryUrl) {
         fallbackArgs.push('--entry-url', brand.entryUrl);
+      }
+      if (fs.existsSync(WATCHCHARTS_COOKIES_FILE)) {
+        fallbackArgs.push('--cookies-file', WATCHCHARTS_COOKIES_FILE);
       }
       appendLog('[fallback] filling missing history from WatchCharts');
       const fallbackCode = await runCommand(PYTHON_BIN, fallbackArgs, CRAWLER_DIR, '[watchcharts]');

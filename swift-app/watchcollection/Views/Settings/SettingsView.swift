@@ -2,6 +2,13 @@ import SwiftUI
 
 struct SettingsView: View {
     @AppStorage("defaultCurrency") private var defaultCurrency = "USD"
+    @State private var isRefreshingCatalog = false
+    @State private var refreshResult: RefreshResult?
+
+    private enum RefreshResult {
+        case success
+        case error(String)
+    }
 
     var body: some View {
         NavigationStack {
@@ -102,6 +109,64 @@ struct SettingsView: View {
                             .font(.caption)
                             .foregroundStyle(Theme.Colors.textSecondary)
                     }
+                }
+
+                Divider()
+
+                Button {
+                    Haptics.medium()
+                    refreshCatalog()
+                } label: {
+                    HStack {
+                        HStack(spacing: Theme.Spacing.sm) {
+                            if isRefreshingCatalog {
+                                ProgressView()
+                                    .tint(Theme.Colors.accent)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .foregroundStyle(Theme.Colors.accent)
+                            }
+                            Text("Force Catalog Refresh")
+                                .font(Theme.Typography.sans(.body))
+                                .foregroundStyle(Theme.Colors.textPrimary)
+                        }
+                        Spacer()
+                        if let result = refreshResult {
+                            switch result {
+                            case .success:
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(Theme.Colors.success)
+                            case .error:
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(Theme.Colors.error)
+                            }
+                        }
+                    }
+                }
+                .disabled(isRefreshingCatalog)
+            }
+        }
+    }
+
+    private func refreshCatalog() {
+        isRefreshingCatalog = true
+        refreshResult = nil
+
+        Task {
+            do {
+                let importer = CatalogImporter()
+                importer.resetImportState()
+                try await importer.importCatalog()
+                await MainActor.run {
+                    isRefreshingCatalog = false
+                    refreshResult = .success
+                    Haptics.success()
+                }
+            } catch {
+                await MainActor.run {
+                    isRefreshingCatalog = false
+                    refreshResult = .error(error.localizedDescription)
+                    Haptics.error()
                 }
             }
         }

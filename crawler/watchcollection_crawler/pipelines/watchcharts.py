@@ -108,6 +108,29 @@ def parse_csv(value: Optional[str]) -> List[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
 
 
+def parse_netscape_cookies(file_path: str) -> List[dict]:
+    cookies = []
+    with open(file_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split("\t")
+            if len(parts) < 7:
+                continue
+            domain, _, path, secure, expires, name, value = parts[:7]
+            if domain.startswith("."):
+                domain = domain[1:]
+            cookies.append({
+                "name": name,
+                "value": value,
+                "domain": domain,
+                "path": path,
+                "secure": secure.upper() == "TRUE",
+            })
+    return cookies
+
+
 @dataclass(frozen=True)
 class ProxySettings:
     url: str
@@ -200,6 +223,7 @@ class WatchChartsFetcher:
         brightdata_zone: Optional[str] = None,
         brightdata_endpoint: str = DEFAULT_BRIGHTDATA_ENDPOINT,
         brightdata_format: str = DEFAULT_BRIGHTDATA_FORMAT,
+        session_cookies: Optional[List[dict]] = None,
     ) -> None:
         self.retries = max(0, retries)
         self._ac: Optional[AntiCaptchaClient] = None
@@ -316,6 +340,32 @@ class WatchChartsFetcher:
                 http2=bool(h2),
                 proxy=self._proxy_url,
             )
+
+        self._session_cookies = session_cookies or []
+        if self._session_cookies:
+            self._apply_session_cookies()
+
+    def _apply_session_cookies(self) -> None:
+        for cookie in self._session_cookies:
+            name = cookie.get("name")
+            value = cookie.get("value", "")
+            domain = cookie.get("domain", "watchcharts.com")
+            path = cookie.get("path", "/")
+            if not name:
+                continue
+            if self._httpx:
+                self._httpx.cookies.set(name, value, domain=domain, path=path)
+            if self._curl:
+                self._curl.cookies.set(name, value, domain=domain, path=path)
+
+    def get_cookie_header(self) -> str:
+        if not self._session_cookies:
+            return ""
+        parts = []
+        for c in self._session_cookies:
+            if c.get("name") and c.get("value"):
+                parts.append(f"{c['name']}={c['value']}")
+        return "; ".join(parts)
 
     async def start(self, bootstrap_url: str) -> None:
         self._bootstrap_url = bootstrap_url
@@ -458,6 +508,9 @@ class WatchChartsFetcher:
         merged_headers = DEFAULT_HEADERS.copy()
         if headers:
             merged_headers.update(headers)
+        cookie_header = self.get_cookie_header()
+        if cookie_header:
+            merged_headers["Cookie"] = cookie_header
         payload = {
             "zone": self._brightdata_zone,
             "url": url,
@@ -1065,6 +1118,21 @@ def parse_price_history_payload(
     )
 
 
+def decode_json_response(text: str) -> Optional[dict]:
+    if not text:
+        return None
+    raw = text.strip()
+    if raw.startswith("<"):
+        try:
+            raw = BeautifulSoup(raw, "html.parser").get_text().strip()
+        except Exception:
+            pass
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+
 async def fetch_price_history_for_model(
     model: WatchChartsModelDTO,
     fetcher: WatchChartsFetcher,
@@ -1492,9 +1560,8 @@ async def fetch_price_history(
         fs_text = await fetcher._fetch_via_flaresolverr(fs_chart_url, headers=fs_headers)
         if not fs_text:
             return None
-        try:
-            fs_payload = json.loads(fs_text)
-        except json.JSONDecodeError:
+        fs_payload = decode_json_response(fs_text)
+        if not fs_payload:
             return None
         fs_currency = extract_sys_currency(fs_html)
         return parse_price_history_payload(
@@ -1562,16 +1629,15 @@ async def fetch_price_history(
             print(f"[{watch_id}] price history fetch failed: {exc}")
             return None
 
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError as exc:
+    payload = decode_json_response(text)
+    if not payload:
         if not attempted_flaresolverr:
             history = await fetch_via_flaresolverr()
             attempted_flaresolverr = True
             if history:
                 print(f"[{watch_id}] price history via flaresolverr")
                 return history
-        print(f"[{watch_id}] price history invalid JSON: {exc}")
+        print(f"[{watch_id}] price history invalid JSON")
         return None
 
     currency = extract_sys_currency(html)
@@ -1582,21 +1648,22 @@ async def fetch_price_history(
         key=key,
         currency=currency,
     )
-    if history:
+    if history and history.points:
         return history
 
     if not attempted_flaresolverr:
         error_message = None
         if isinstance(payload, dict):
             error_message = payload.get("message") or payload.get("error")
+        history = await fetch_via_flaresolverr()
+        attempted_flaresolverr = True
+        if history:
+            print(f"[{watch_id}] price history via flaresolverr")
+            return history
         if error_message:
-            history = await fetch_via_flaresolverr()
-            attempted_flaresolverr = True
-            if history:
-                print(f"[{watch_id}] price history via flaresolverr")
-                return history
+            return None
 
-    return None
+    return history if history and history.points else None
 
 
 async def fetch_price_history_task(
@@ -2120,6 +2187,7 @@ async def crawl_watchcharts_async(
     brightdata_zone: Optional[str] = None,
     brightdata_endpoint: str = DEFAULT_BRIGHTDATA_ENDPOINT,
     brightdata_format: str = DEFAULT_BRIGHTDATA_FORMAT,
+    session_cookies: Optional[List[dict]] = None,
 ) -> WatchChartsBrandCatalog:
     OUTPUT_DIR.mkdir(exist_ok=True)
 
@@ -2177,6 +2245,7 @@ async def crawl_watchcharts_async(
         brightdata_zone=brightdata_zone,
         brightdata_endpoint=brightdata_endpoint,
         brightdata_format=brightdata_format,
+        session_cookies=session_cookies,
     )
 
     await fetcher.start(entry_url)
@@ -2417,6 +2486,7 @@ async def retry_failed_async(
     brightdata_zone: Optional[str] = None,
     brightdata_endpoint: str = DEFAULT_BRIGHTDATA_ENDPOINT,
     brightdata_format: str = DEFAULT_BRIGHTDATA_FORMAT,
+    session_cookies: Optional[List[dict]] = None,
 ) -> None:
     OUTPUT_DIR.mkdir(exist_ok=True)
     checkpoint_file, listings_cache, failed_urls_file = get_checkpoint_paths(brand_slug)
@@ -2458,6 +2528,7 @@ async def retry_failed_async(
         brightdata_zone=brightdata_zone,
         brightdata_endpoint=brightdata_endpoint,
         brightdata_format=brightdata_format,
+        session_cookies=session_cookies,
     )
 
     await fetcher.start(entry_url)
@@ -2570,6 +2641,7 @@ def crawl_watchcharts(
     brightdata_zone: Optional[str] = None,
     brightdata_endpoint: str = DEFAULT_BRIGHTDATA_ENDPOINT,
     brightdata_format: str = DEFAULT_BRIGHTDATA_FORMAT,
+    session_cookies: Optional[List[dict]] = None,
 ) -> WatchChartsBrandCatalog:
     return asyncio.run(
         crawl_watchcharts_async(
@@ -2605,6 +2677,7 @@ def crawl_watchcharts(
             brightdata_zone=brightdata_zone,
             brightdata_endpoint=brightdata_endpoint,
             brightdata_format=brightdata_format,
+            session_cookies=session_cookies,
         )
     )
 
@@ -2639,6 +2712,7 @@ def retry_failed(
     brightdata_zone: Optional[str] = None,
     brightdata_endpoint: str = DEFAULT_BRIGHTDATA_ENDPOINT,
     brightdata_format: str = DEFAULT_BRIGHTDATA_FORMAT,
+    session_cookies: Optional[List[dict]] = None,
 ) -> None:
     asyncio.run(
         retry_failed_async(
@@ -2671,6 +2745,7 @@ def retry_failed(
             brightdata_zone=brightdata_zone,
             brightdata_endpoint=brightdata_endpoint,
             brightdata_format=brightdata_format,
+            session_cookies=session_cookies,
         )
     )
 
@@ -2711,6 +2786,7 @@ def main() -> None:
     parser.add_argument("--brightdata-zone", type=str, help="Bright Data Web Unlocker zone name")
     parser.add_argument("--brightdata-endpoint", type=str, help=f"Bright Data API endpoint (default: {DEFAULT_BRIGHTDATA_ENDPOINT})")
     parser.add_argument("--brightdata-format", type=str, default=DEFAULT_BRIGHTDATA_FORMAT, help="Bright Data response format (default: raw)")
+    parser.add_argument("--cookies-file", type=str, help="Path to Netscape cookies.txt file for session authentication")
     parser.add_argument("--proxy", type=str, help="Proxy URL for HTTP/Playwright/anti-captcha (e.g. http://user:pass@host:port)")
     parser.add_argument("--proxy-type", type=str, help="Proxy type for anti-captcha (http, https, socks4, socks5)")
     parser.add_argument("--brightdata-username", type=str, help="Bright Data proxy username (full username from dashboard)")
@@ -2769,6 +2845,15 @@ def main() -> None:
     )
     brightdata_endpoint = args.brightdata_endpoint or os.getenv("BRIGHTDATA_ENDPOINT") or DEFAULT_BRIGHTDATA_ENDPOINT
     brightdata_format = args.brightdata_format or os.getenv("BRIGHTDATA_FORMAT") or DEFAULT_BRIGHTDATA_FORMAT
+
+    cookies_file = args.cookies_file or os.getenv("WATCHCHARTS_COOKIES_FILE")
+    session_cookies = []
+    if cookies_file:
+        if os.path.isfile(cookies_file):
+            session_cookies = parse_netscape_cookies(cookies_file)
+            print(f"Loaded {len(session_cookies)} cookies from {cookies_file}")
+        else:
+            print(f"Warning: cookies file not found: {cookies_file}")
 
     backend_choice = (args.backend or "auto").lower()
     use_brightdata = backend_choice in {"brightdata", "brightdata-api", "brightdata-webaccess"}
@@ -2843,6 +2928,7 @@ def main() -> None:
             brightdata_zone=brightdata_zone,
             brightdata_endpoint=brightdata_endpoint,
             brightdata_format=brightdata_format,
+            session_cookies=session_cookies,
         )
     else:
         crawl_watchcharts(
@@ -2878,6 +2964,7 @@ def main() -> None:
             brightdata_zone=brightdata_zone,
             brightdata_endpoint=brightdata_endpoint,
             brightdata_format=brightdata_format,
+            session_cookies=session_cookies,
         )
 
 
