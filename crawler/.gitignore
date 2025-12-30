@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+ENV/
+env/
+
+# Environment
+.env
+.env.local
+
+# Output data
+output/
+output_watchcharts/
+images_cache/
+*.json
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# JS deps
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/
+
+# Browser profiles
+pw-profile*/
+
+# Wrangler local state
+.wrangler/
+
+# Cookies
+*_cookies.txt
+chrono24_cookies.txt
+
+# Test images
+*.png

@@ -1,0 +1,16 @@
+{
+  "name": "watchcollection-tui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/app.ts"
+  },
+  "dependencies": {
+    "tuiuiu.js": "^1.0.33"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.24",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3"
+  }
+}
