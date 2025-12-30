@@ -43,6 +43,7 @@ actor WatchOCRService {
 
         let confidence = observations
             .compactMap { $0.topCandidates(1).first?.confidence }
+            .map { Double($0) }
             .average(default: 0)
 
         return OCRHints(
