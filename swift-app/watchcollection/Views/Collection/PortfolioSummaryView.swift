@@ -80,7 +80,7 @@ struct PortfolioSummaryView: View {
             }
         }
         .padding(.horizontal, Theme.Spacing.lg)
-        .task {
+        .task(id: totalValueUSD) {
             await loadConvertedValues()
         }
     }
