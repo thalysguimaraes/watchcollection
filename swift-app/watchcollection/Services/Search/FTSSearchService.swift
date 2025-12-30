@@ -25,7 +25,9 @@ final class FTSSearchService: Sendable {
     }
 
     private func normalizeQuery(_ query: String) -> String {
-        query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        query.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "  ", with: " ")
+            .lowercased()
     }
 
     private func tokenize(_ query: String) -> [String] {
@@ -38,7 +40,9 @@ final class FTSSearchService: Sendable {
 
     private func ftsSearch(tokens: [String], limit: Int) throws -> [FTSSearchResult] {
         try dbQueue.read { db in
-            let ftsQuery = tokens.map { "\($0)*" }.joined(separator: " ")
+            // Require every token to appear so brand-heavy queries (e.g. "rolex sea dweller")
+            // don't return a generic list of Rolex models that push the true match out of the top results.
+            let ftsQuery = tokens.map { "\($0)*" }.joined(separator: " AND ")
 
             let sql = """
                 SELECT
@@ -59,6 +63,7 @@ final class FTSSearchService: Sendable {
                         WHEN f.displayName LIKE ? THEN 2
                         ELSE 3
                     END,
+                    LENGTH(f.reference) ASC,
                     f.displayName
                 LIMIT ?
             """
