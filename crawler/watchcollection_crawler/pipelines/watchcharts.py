@@ -4,6 +4,7 @@ import asyncio
 import inspect
 import json
 import os
+import random
 import re
 import sys
 import time
@@ -32,6 +33,7 @@ except Exception:
     load_dotenv = None
 
 from watchcollection_crawler.core.anticaptcha import AntiCaptchaClient, AntiCaptchaProxy, detect_turnstile
+from watchcollection_crawler.core.curl_impersonate import CurlImpersonateClient
 from watchcollection_crawler.core.flaresolverr import FlareSolverrClient
 from watchcollection_crawler.core.paths import WATCHCHARTS_OUTPUT_DIR
 from watchcollection_crawler.core.playwright_stealth import PlaywrightStealthClient
@@ -261,12 +263,12 @@ class WatchChartsFetcher:
 
         backend_choice = (backend or "auto").lower()
         if backend_choice == "auto":
-            backend_choice = "curl" if CurlAsyncSession else "httpx"
+            backend_choice = "curl-impersonate"
         if backend_choice in {"brightdata", "brightdata-api", "brightdata-webaccess"}:
             backend_choice = "brightdata"
         if backend_choice == "curl" and not CurlAsyncSession:
             raise RuntimeError("curl_cffi is not installed; install it or use --backend httpx")
-        if backend_choice not in {"curl", "httpx", "brightdata"}:
+        if backend_choice not in {"curl", "httpx", "brightdata", "curl-impersonate"}:
             raise RuntimeError(f"Unknown backend '{backend_choice}'")
         if backend_choice == "brightdata" and (not brightdata_api_key or not brightdata_zone):
             raise RuntimeError("Bright Data backend requires --brightdata-api-key and --brightdata-zone")
@@ -274,6 +276,7 @@ class WatchChartsFetcher:
             self._ac_enabled = False
             self._ac = None
         self._backend = backend_choice
+        self._curl_impersonate: Optional[CurlImpersonateClient] = None
         self._timeout = timeout
 
         impersonate_list = parse_csv(impersonate) or ["chrome120"]
@@ -307,6 +310,8 @@ class WatchChartsFetcher:
                 impersonate=self._impersonate,
                 proxy=self._proxy_url,
             )
+        elif self._backend == "curl-impersonate":
+            self._curl_impersonate = CurlImpersonateClient(timeout=int(timeout))
         else:
             self._httpx = httpx.AsyncClient(
                 headers=DEFAULT_HEADERS.copy(),
@@ -322,6 +327,8 @@ class WatchChartsFetcher:
 
         if self._backend == "brightdata":
             print("Using Bright Data Web Unlocker API")
+        elif self._backend == "curl-impersonate":
+            print("Using curl-impersonate (Docker)")
 
         try:
             status_code, text = await self._get(bootstrap_url)
@@ -487,6 +494,12 @@ class WatchChartsFetcher:
     async def _get(self, url: str, session_id: Optional[str] = None) -> tuple[int, str]:
         if self._backend == "brightdata":
             return await self._brightdata_request(url, None, session_id=session_id)
+        if self._backend == "curl-impersonate" and self._curl_impersonate:
+            await asyncio.sleep(random.uniform(1.5, 3.0))
+            status, text = await asyncio.to_thread(
+                self._curl_impersonate.get_status, url, None, True, int(self._timeout)
+            )
+            return status, text
         if self._curl:
             resp = await self._curl.get(
                 url,
@@ -509,6 +522,11 @@ class WatchChartsFetcher:
             return await self._brightdata_request(url, headers, session_id=session_id)
         if not headers:
             return await self._get(url, session_id=session_id)
+        if self._backend == "curl-impersonate" and self._curl_impersonate:
+            status, text = await asyncio.to_thread(
+                self._curl_impersonate.get_status, url, headers, True, int(self._timeout)
+            )
+            return status, text
         if self._curl:
             resp = await self._curl.get(
                 url,
@@ -2691,7 +2709,7 @@ def main() -> None:
     parser.add_argument("--concurrency", type=int, default=6, help="Max concurrent detail fetches")
     parser.add_argument("--timeout", type=float, default=30.0, help="Request timeout in seconds")
     parser.add_argument("--retries", type=int, default=1, help="Retry count per request")
-    parser.add_argument("--backend", type=str, default="brightdata", help="HTTP backend: brightdata (preferred), curl, httpx")
+    parser.add_argument("--backend", type=str, default="curl-impersonate", help="HTTP backend: curl-impersonate (default), brightdata, curl, httpx")
     parser.add_argument("--impersonate", type=str, default="chrome120", help="curl_cffi impersonation profile(s), comma-separated")
     parser.add_argument("--retry-rounds", type=int, default=2, help="Recursive retry rounds per batch")
     parser.add_argument("--retry-delay", type=float, default=2.0, help="Base delay between retry rounds in seconds")

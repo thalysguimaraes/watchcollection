@@ -15,8 +15,7 @@ from watchcollection_crawler.brand_rules import (
     normalize_reference,
     normalize_text,
 )
-from watchcollection_crawler.core.brightdata import BrightDataClient
-from watchcollection_crawler.core.flaresolverr import FlareSolverrClient
+from watchcollection_crawler.core.curl_impersonate import CurlImpersonateClient
 from watchcollection_crawler.core.playwright_stealth import PlaywrightStealthClient
 
 CHRONO24_BASE = "https://www.chrono24.com"
@@ -90,20 +89,14 @@ def _build_headers(extra_headers: Optional[dict]) -> dict:
 def _fetch_html(
     url: str,
     *,
-    use_flaresolverr: bool,
-    client: Optional[FlareSolverrClient],
+    client: Optional[CurlImpersonateClient],
     http_session: Optional[requests.Session],
-    brightdata_client: Optional[BrightDataClient],
     extra_headers: Optional[dict],
     timeout: float = 30.0,
 ) -> str:
     headers = _build_headers(extra_headers)
-    if brightdata_client:
-        return brightdata_client.get(url, headers=headers, timeout=timeout)
-    if use_flaresolverr:
-        if not client:
-            raise ValueError("FlareSolverr client is required")
-        return client.get(url, headers=headers)
+    if client:
+        return client.get(url, headers=headers, timeout=int(timeout))
     session, should_close = _get_http_session(http_session)
     try:
         resp = session.get(url, headers=headers, timeout=timeout)
@@ -117,19 +110,15 @@ def search_by_reference(
     brand: str,
     reference: str,
     limit: int = 10,
-    use_flaresolverr: bool = True,
     brand_id: Optional[str] = None,
-    client: Optional[FlareSolverrClient] = None,
+    client: Optional[CurlImpersonateClient] = None,
     http_session: Optional[requests.Session] = None,
-    brightdata_client: Optional[BrightDataClient] = None,
     page: Optional[int] = None,
     currency: Optional[str] = None,
 ) -> List[Dict]:
     """Search Chrono24 by brand and reference number (for photo crawler)."""
-    results = []
     slug = brand_to_slug(brand)
 
-    # Build reference query: keep alphanumerics when letters are present
     ref_query = reference
     if reference:
         cleaned = re.sub(r"[^A-Za-z0-9]+", "", reference)
@@ -146,50 +135,15 @@ def search_by_reference(
         params["currencyId"] = currency
     url = f"{CHRONO24_BASE}/{slug}/index.htm?{urlencode(params)}"
 
-    if brightdata_client:
-        html = _fetch_html(
-            url,
-            use_flaresolverr=False,
-            client=None,
-            http_session=http_session,
-            brightdata_client=brightdata_client,
-            extra_headers=None,
-        )
-        soup = BeautifulSoup(html, "html.parser")
-        results = parse_search_results(soup, brand_name=brand, brand_id=brand_id)
-    elif use_flaresolverr:
-        owns_client = False
-        if client is None:
-            client = FlareSolverrClient()
-            client.create_session()
-            owns_client = True
-        else:
-            client.ensure_session()
-        try:
-            html = _fetch_html(
-                url,
-                use_flaresolverr=True,
-                client=client,
-                http_session=http_session,
-                brightdata_client=None,
-                extra_headers=None,
-            )
-            soup = BeautifulSoup(html, "html.parser")
-            results = parse_search_results(soup, brand_name=brand, brand_id=brand_id)
-        finally:
-            if owns_client:
-                client.destroy_session()
-    else:
-        html = _fetch_html(
-            url,
-            use_flaresolverr=False,
-            client=None,
-            http_session=http_session,
-            brightdata_client=None,
-            extra_headers=None,
-        )
-        soup = BeautifulSoup(html, "html.parser")
-        results = parse_search_results(soup, brand_name=brand, brand_id=brand_id)
+    effective_client = client if client else CurlImpersonateClient()
+    html = _fetch_html(
+        url,
+        client=effective_client,
+        http_session=http_session,
+        extra_headers=None,
+    )
+    soup = BeautifulSoup(html, "html.parser")
+    results = parse_search_results(soup, brand_name=brand, brand_id=brand_id)
 
     return results[:limit]
 
@@ -197,81 +151,30 @@ def search_by_reference(
 def search_chrono24(
     brand: str,
     limit: int = 50,
-    use_flaresolverr: bool = True,
     brand_id: Optional[str] = None,
-    client: Optional[FlareSolverrClient] = None,
+    client: Optional[CurlImpersonateClient] = None,
     http_session: Optional[requests.Session] = None,
-    brightdata_client: Optional[BrightDataClient] = None,
 ) -> List[Dict]:
     results = []
     slug = brand_to_slug(brand)
     page = 1
+    effective_client = client if client else CurlImpersonateClient()
 
-    if brightdata_client:
-        while len(results) < limit:
-            url = f"{CHRONO24_BASE}/{slug}/index.htm?showpage={page}&sortorder=5"
-            html = _fetch_html(
-                url,
-                use_flaresolverr=False,
-                client=None,
-                http_session=http_session,
-                brightdata_client=brightdata_client,
-                extra_headers=None,
-            )
-            soup = BeautifulSoup(html, "html.parser")
-            page_results = parse_search_results(soup, brand_name=brand, brand_id=brand_id)
-            if not page_results:
-                break
-            results.extend(page_results)
-            page += 1
-            time.sleep(1)
-    elif use_flaresolverr:
-        owns_client = False
-        if client is None:
-            client = FlareSolverrClient()
-            client.create_session()
-            owns_client = True
-        else:
-            client.ensure_session()
-        try:
-            while len(results) < limit:
-                url = f"{CHRONO24_BASE}/{slug}/index.htm?showpage={page}&sortorder=5"
-                html = _fetch_html(
-                    url,
-                    use_flaresolverr=True,
-                    client=client,
-                    http_session=http_session,
-                    brightdata_client=None,
-                    extra_headers=None,
-                )
-                soup = BeautifulSoup(html, "html.parser")
-                page_results = parse_search_results(soup, brand_name=brand, brand_id=brand_id)
-                if not page_results:
-                    break
-                results.extend(page_results)
-                page += 1
-                time.sleep(1)
-        finally:
-            if owns_client:
-                client.destroy_session()
-    else:
-        while len(results) < limit:
-            url = f"{CHRONO24_BASE}/{slug}/index.htm?showpage={page}&sortorder=5"
-            html = _fetch_html(
-                url,
-                use_flaresolverr=False,
-                client=None,
-                http_session=http_session,
-                brightdata_client=None,
-                extra_headers=None,
-            )
-            soup = BeautifulSoup(html, "html.parser")
-            page_results = parse_search_results(soup, brand_name=brand, brand_id=brand_id)
-            if not page_results:
-                break
-            results.extend(page_results)
-            page += 1
-            time.sleep(1)
+    while len(results) < limit:
+        url = f"{CHRONO24_BASE}/{slug}/index.htm?showpage={page}&sortorder=5"
+        html = _fetch_html(
+            url,
+            client=effective_client,
+            http_session=http_session,
+            extra_headers=None,
+        )
+        soup = BeautifulSoup(html, "html.parser")
+        page_results = parse_search_results(soup, brand_name=brand, brand_id=brand_id)
+        if not page_results:
+            break
+        results.extend(page_results)
+        page += 1
+        time.sleep(2)
 
     return results[:limit]
 
@@ -404,53 +307,17 @@ def parse_search_results(
 
 def get_watch_details(
     url: str,
-    use_flaresolverr: bool = True,
-    client: Optional[FlareSolverrClient] = None,
+    client: Optional[CurlImpersonateClient] = None,
     http_session: Optional[requests.Session] = None,
-    brightdata_client: Optional[BrightDataClient] = None,
 ) -> Dict[str, Any]:
-    if brightdata_client:
-        html = _fetch_html(
-            url,
-            use_flaresolverr=False,
-            client=None,
-            http_session=http_session,
-            brightdata_client=brightdata_client,
-            extra_headers=None,
-        )
-        soup = BeautifulSoup(html, "html.parser")
-    elif use_flaresolverr:
-        owns_client = False
-        if client is None:
-            client = FlareSolverrClient()
-            client.create_session()
-            owns_client = True
-        else:
-            client.ensure_session()
-        try:
-            html = _fetch_html(
-                url,
-                use_flaresolverr=True,
-                client=client,
-                http_session=http_session,
-                brightdata_client=None,
-                extra_headers=None,
-            )
-            soup = BeautifulSoup(html, "html.parser")
-        finally:
-            if owns_client:
-                client.destroy_session()
-    else:
-        html = _fetch_html(
-            url,
-            use_flaresolverr=False,
-            client=None,
-            http_session=http_session,
-            brightdata_client=None,
-            extra_headers=None,
-        )
-        soup = BeautifulSoup(html, "html.parser")
-
+    effective_client = client if client else CurlImpersonateClient()
+    html = _fetch_html(
+        url,
+        client=effective_client,
+        http_session=http_session,
+        extra_headers=None,
+    )
+    soup = BeautifulSoup(html, "html.parser")
     return parse_watch_details(soup)
 
 
@@ -752,55 +619,20 @@ def _decode_json_response(text: str) -> Optional[dict]:
 
 def get_similar_product_context(
     url: str,
-    use_flaresolverr: bool = True,
-    client: Optional[FlareSolverrClient] = None,
+    client: Optional[CurlImpersonateClient] = None,
     http_session: Optional[requests.Session] = None,
     extra_headers: Optional[dict] = None,
-    brightdata_client: Optional[BrightDataClient] = None,
 ) -> Dict[str, Any]:
     if not url:
         return {}
 
-    html = ""
-    if brightdata_client:
-        html = _fetch_html(
-            url,
-            use_flaresolverr=False,
-            client=None,
-            http_session=http_session,
-            brightdata_client=brightdata_client,
-            extra_headers=extra_headers,
-        )
-    elif use_flaresolverr:
-        owns_client = False
-        if client is None:
-            client = FlareSolverrClient()
-            client.create_session()
-            owns_client = True
-        else:
-            client.ensure_session()
-        try:
-            html = _fetch_html(
-                url,
-                use_flaresolverr=True,
-                client=client,
-                http_session=http_session,
-                brightdata_client=None,
-                extra_headers=extra_headers,
-            )
-        finally:
-            if owns_client:
-                client.destroy_session()
-    else:
-        html = _fetch_html(
-            url,
-            use_flaresolverr=False,
-            client=None,
-            http_session=http_session,
-            brightdata_client=None,
-            extra_headers=extra_headers,
-        )
-
+    effective_client = client if client else CurlImpersonateClient()
+    html = _fetch_html(
+        url,
+        client=effective_client,
+        http_session=http_session,
+        extra_headers=extra_headers,
+    )
     soup = BeautifulSoup(html, "html.parser")
     meta = _extract_meta_data(html) or {}
     container = _extract_similar_product_container(soup)
@@ -826,12 +658,10 @@ def fetch_similar_product_chart(
     csrf_token: Optional[str],
     preferred_range: Optional[str] = "max",
     condition_new: bool = False,
-    use_flaresolverr: bool = True,
-    client: Optional[FlareSolverrClient] = None,
+    client: Optional[CurlImpersonateClient] = None,
     http_session: Optional[requests.Session] = None,
     referer: Optional[str] = None,
     extra_headers: Optional[dict] = None,
-    brightdata_client: Optional[BrightDataClient] = None,
 ) -> Optional[dict]:
     if not product_id:
         return None
@@ -851,45 +681,13 @@ def fetch_similar_product_chart(
     if extra_headers:
         headers.update(extra_headers)
 
-    if brightdata_client:
-        raw = _fetch_html(
-            url,
-            use_flaresolverr=False,
-            client=None,
-            http_session=http_session,
-            brightdata_client=brightdata_client,
-            extra_headers=headers,
-        )
-    elif use_flaresolverr:
-        owns_client = False
-        if client is None:
-            client = FlareSolverrClient()
-            client.create_session()
-            owns_client = True
-        else:
-            client.ensure_session()
-        try:
-            raw = _fetch_html(
-                url,
-                use_flaresolverr=True,
-                client=client,
-                http_session=http_session,
-                brightdata_client=None,
-                extra_headers=headers,
-            )
-        finally:
-            if owns_client:
-                client.destroy_session()
-    else:
-        raw = _fetch_html(
-            url,
-            use_flaresolverr=False,
-            client=None,
-            http_session=http_session,
-            brightdata_client=None,
-            extra_headers=headers,
-        )
-
+    effective_client = client if client else CurlImpersonateClient()
+    raw = _fetch_html(
+        url,
+        client=effective_client,
+        http_session=http_session,
+        extra_headers=headers,
+    )
     return _decode_json_response(raw)
 
 
@@ -897,19 +695,15 @@ def get_similar_product_performance(
     url: str,
     preferred_range: Optional[str] = "max",
     condition_new: bool = False,
-    use_flaresolverr: bool = True,
-    client: Optional[FlareSolverrClient] = None,
+    client: Optional[CurlImpersonateClient] = None,
     http_session: Optional[requests.Session] = None,
     extra_headers: Optional[dict] = None,
-    brightdata_client: Optional[BrightDataClient] = None,
 ) -> Dict[str, Any]:
     context = get_similar_product_context(
         url,
-        use_flaresolverr=use_flaresolverr,
         client=client,
         http_session=http_session,
         extra_headers=extra_headers,
-        brightdata_client=brightdata_client,
     )
 
     chart_payload = None
@@ -919,12 +713,10 @@ def get_similar_product_performance(
             csrf_token=context.get("csrf_token"),
             preferred_range=preferred_range,
             condition_new=condition_new,
-            use_flaresolverr=use_flaresolverr,
             client=client,
             http_session=http_session,
             referer=url,
             extra_headers=extra_headers,
-            brightdata_client=brightdata_client,
         )
 
     chart = None
