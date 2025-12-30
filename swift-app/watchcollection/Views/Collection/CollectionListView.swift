@@ -151,7 +151,7 @@ struct CollectionListView: View {
                 case .watchDetail(let item):
                     WatchDetailView(item: item)
                 case .editWatch(let item):
-                    EditWatchView(item: item)
+                    WatchDetailView(item: item)
                 }
             }
             .task {
