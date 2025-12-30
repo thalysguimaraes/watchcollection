@@ -6,8 +6,9 @@ import Observation
 final class WatchIdentificationViewModel {
     var state: IdentificationState = .selectSource
     var selectedImage: UIImage?
-
-    private let catalogMatcher = CatalogMatcher()
+    private var lastContext: IdentificationContext?
+    private let coordinator = WatchIdentificationCoordinator()
+    private let feedbackStore = IdentificationFeedbackStore()
 
     var stateKey: String {
         switch state {
@@ -29,23 +30,11 @@ final class WatchIdentificationViewModel {
     }
 
     func identifyWatch(_ image: UIImage) async {
-        guard let imageData = image.prepareForAI() else {
-            Haptics.error()
-            state = .error("Failed to process image")
-            return
-        }
-
         do {
-            let identification = try await WatchAIService.shared.identifyWatch(imageData: imageData)
+            let run = try await coordinator.identify(image: image)
 
-            let matches = try await catalogMatcher.findMatches(for: identification)
-
-            if matches.isEmpty {
-                state = .noMatch(identification: identification)
-            } else {
-                let watchMatches = matches.map { $0.watch }
-                state = .results(matches: watchMatches, identification: identification)
-            }
+            lastContext = run.context
+            state = run.matches.isEmpty ? .noMatch(identification: run.identification) : .results(matches: run.matches, identification: run.identification)
 
             Haptics.success()
         } catch {
@@ -54,9 +43,31 @@ final class WatchIdentificationViewModel {
         }
     }
 
+    func refineMatches(with identification: WatchIdentification) {
+        guard let context = lastContext else { return }
+        state = .analyzing
+        Task {
+            do {
+                let run = try await coordinator.rerun(with: identification, context: context)
+                lastContext = run.context
+                state = run.matches.isEmpty ? .noMatch(identification: run.identification) : .results(matches: run.matches, identification: run.identification)
+                Haptics.success()
+            } catch {
+                Haptics.error()
+                state = .error(error.localizedDescription)
+            }
+        }
+    }
+
+    func recordSelection(_ match: IdentificationMatch, identification: WatchIdentification) {
+        guard let context = lastContext else { return }
+        feedbackStore.recordSelection(match: match, identification: identification, imageKey: context.processedImage.cacheKey)
+    }
+
     func retry() {
         selectedImage = nil
         state = .selectSource
+        lastContext = nil
     }
 
     func cancel() {

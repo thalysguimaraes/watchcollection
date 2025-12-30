@@ -1,0 +1,14 @@
+[
+  {
+    "id": "sample-rolex",
+    "imagePath": "swift-app/watchcollection/Evaluation/fixtures/rolex_sub.png",
+    "expectedBrand": "Rolex",
+    "expectedReference": "126610LN"
+  },
+  {
+    "id": "sample-tudor",
+    "imagePath": "swift-app/watchcollection/Evaluation/fixtures/tudor_bb58.png",
+    "expectedBrand": "Tudor",
+    "expectedReference": "M79030B"
+  }
+]

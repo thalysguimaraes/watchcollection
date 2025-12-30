@@ -10,7 +10,8 @@ enum WatchIdentificationParser {
             material: nil,
             dialColor: nil,
             complications: [],
-            rawDescription: text
+            rawDescription: text,
+            source: "parser"
         )
 
         let lines = text.components(separatedBy: .newlines)
@@ -56,11 +57,11 @@ enum WatchIdentificationParser {
         }
 
         if identification.brand == nil {
-            identification.brand = extractBrandFromText(text)
+            identification.brand = extractBrand(from: text)
         }
 
         if identification.reference == nil {
-            identification.reference = extractReferenceFromText(text)
+            identification.reference = extractReference(from: text)
         }
 
         return identification
@@ -98,19 +99,9 @@ enum WatchIdentificationParser {
         return cleaned
     }
 
-    private static func extractBrandFromText(_ text: String) -> String? {
-        let knownBrands = [
-            "Rolex", "Omega", "Patek Philippe", "Audemars Piguet", "Vacheron Constantin",
-            "A. Lange & Söhne", "Jaeger-LeCoultre", "IWC", "Cartier", "Panerai",
-            "Breitling", "Tudor", "TAG Heuer", "Zenith", "Hublot", "Richard Mille",
-            "Blancpain", "Breguet", "Chopard", "Girard-Perregaux", "Ulysse Nardin",
-            "Grand Seiko", "Seiko", "Longines", "Tissot", "Hamilton", "Oris",
-            "Nomos", "Sinn", "Bell & Ross", "Parmigiani", "MB&F", "H. Moser",
-            "FP Journe", "F.P. Journe", "Glashutte Original", "Glashütte Original"
-        ]
-
+    static func extractBrand(from text: String) -> String? {
         let loweredText = text.lowercased()
-        for brand in knownBrands {
+        for brand in BrandLexicon.known {
             if loweredText.contains(brand.lowercased()) {
                 return brand
             }
@@ -119,7 +110,7 @@ enum WatchIdentificationParser {
         return nil
     }
 
-    private static func extractReferenceFromText(_ text: String) -> String? {
+    static func extractReference(from text: String) -> String? {
         let patterns = [
             #"(?:ref\.?\s*)?(\d{3,6}[A-Z]?[A-Z]?[-/]?\d*[A-Z]*)"#,
             #"([A-Z]{2,3}[-\s]?\d{4,6})"#,

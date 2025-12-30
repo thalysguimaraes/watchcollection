@@ -9,6 +9,7 @@ struct WatchIdentification: Sendable {
     var dialColor: String?
     var complications: [String]
     var rawDescription: String
+    var source: String?
 
     var searchQuery: String {
         [brand, model, dialColor, reference].compactMap { $0 }.joined(separator: " ")
@@ -29,7 +30,7 @@ enum IdentificationState: Sendable {
     case selectSource
     case capturing(ImageSourceType)
     case analyzing
-    case results(matches: [WatchModelWithBrand], identification: WatchIdentification)
+    case results(matches: [IdentificationMatch], identification: WatchIdentification)
     case noMatch(identification: WatchIdentification)
     case error(String)
 }
@@ -43,10 +44,13 @@ struct IdentificationMatch: Sendable {
     let watch: WatchModelWithBrand
     let confidence: Double
     let matchType: MatchType
+    let reason: String?
 
     enum MatchType: Sendable {
         case reference
         case brandModel
         case fuzzy
+        case ai
+        case ocr
     }
 }

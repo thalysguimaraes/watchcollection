@@ -9,7 +9,7 @@ struct CatalogMatcher {
     }
 
     func findMatches(for identification: WatchIdentification, limit: Int = 5) async throws -> [IdentificationMatch] {
-        let candidates = try gatherCandidates(for: identification)
+        let candidates = try gatherCandidates(for: identification, hints: nil, limit: limit * 3)
 
         guard !candidates.isEmpty else {
             return []
@@ -31,9 +31,21 @@ struct CatalogMatcher {
         return fallbackMatches(from: candidates, identification: identification, limit: limit)
     }
 
-    private func gatherCandidates(for identification: WatchIdentification) throws -> [WatchModelWithBrand] {
+    func gatherCandidates(for identification: WatchIdentification, hints: OCRHints?, limit: Int = 40) throws -> [WatchModelWithBrand] {
         var allCandidates: [WatchModelWithBrand] = []
         let normalizedBrand = identification.brand?.lowercased()
+
+        if let hints {
+            for ref in hints.candidateReferences {
+                let refResults = try dataService.searchCatalogFTS(query: ref)
+                allCandidates.append(contentsOf: refResults)
+            }
+
+            for brand in hints.candidateBrands {
+                let brandResults = try dataService.searchCatalogFTS(query: brand)
+                allCandidates.append(contentsOf: brandResults)
+            }
+        }
 
         if let reference = identification.reference {
             let refResults = try dataService.searchCatalogFTS(query: reference)
@@ -58,10 +70,10 @@ struct CatalogMatcher {
             if seen.contains(id) { return false }
             seen.insert(id)
             return true
-        }
+        }.prefix(limit).map { $0 }
     }
 
-    private func fallbackMatches(
+    func fallbackMatches(
         from candidates: [WatchModelWithBrand],
         identification: WatchIdentification,
         limit: Int
@@ -99,6 +111,6 @@ struct CatalogMatcher {
         return scored
             .sorted { $0.1 > $1.1 }
             .prefix(limit)
-            .map { IdentificationMatch(watch: $0.0, confidence: $0.1, matchType: .brandModel) }
+            .map { IdentificationMatch(watch: $0.0, confidence: $0.1, matchType: .brandModel, reason: "FTS similarity \(String(format: "%.0f", $0.1 * 100))%") }
     }
 }
