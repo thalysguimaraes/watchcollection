@@ -12,6 +12,7 @@ struct CollectionListView: View {
     @State private var dataService = DataService()
     @State private var showingAddOptions = false
     @AppStorage("defaultCurrency") private var defaultCurrency = "USD"
+    @State private var convertedChartData: [ChartDataPoint]?
 
     private let columns = [
         GridItem(.flexible(), spacing: Theme.Spacing.lg),
@@ -22,7 +23,7 @@ struct CollectionListView: View {
         itemsWithDetails.map(\.collectionItem)
     }
 
-    private var portfolioChartData: [ChartDataPoint]? {
+    private var portfolioChartDataUSD: [ChartDataPoint]? {
         PortfolioChartDataGenerator.generate(from: itemsWithDetails)
     }
 
@@ -74,7 +75,6 @@ struct CollectionListView: View {
                         VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                             CollectionHeaderView(
                                 sortOption: $sortOption,
-                                showingAddOptions: $showingAddOptions,
                                 onAddManually: { router.presentAddWatch() },
                                 onIdentifyWithAI: { router.presentWatchIdentification() }
                             )
@@ -86,10 +86,12 @@ struct CollectionListView: View {
                                     currencyCode: defaultCurrency
                                 )
 
-                                PortfolioChartView(
-                                    dataPoints: portfolioChartData ?? MockChartData.generate(currentValue: stats.totalMarketValueUSD),
-                                    currencyCode: defaultCurrency
-                                )
+                                if let chartData = convertedChartData, !chartData.isEmpty {
+                                    PortfolioChartView(
+                                        dataPoints: chartData,
+                                        currencyCode: defaultCurrency
+                                    )
+                                }
                             }
 
                             Text("\(items.count) watches")
@@ -139,6 +141,7 @@ struct CollectionListView: View {
                         Haptics.light()
                         loadItems()
                         loadStats()
+                        await loadConvertedChartData()
                     }
                 }
             }
@@ -154,6 +157,7 @@ struct CollectionListView: View {
             .task {
                 loadItems()
                 loadStats()
+                await loadConvertedChartData()
             }
             .onChange(of: sortOption) { _, _ in
                 loadItems()
@@ -161,6 +165,10 @@ struct CollectionListView: View {
             .onChange(of: dataRefreshStore.collectionRefreshToken) { _, _ in
                 loadItems()
                 loadStats()
+                Task { await loadConvertedChartData() }
+            }
+            .onChange(of: defaultCurrency) { _, _ in
+                Task { await loadConvertedChartData() }
             }
         }
         .tint(Theme.Colors.accent)
@@ -185,6 +193,30 @@ struct CollectionListView: View {
 
     private func loadStats() {
         stats = try? dataService.collectionStats()
+    }
+
+    private func loadConvertedChartData() async {
+        let chartDataUSD = portfolioChartDataUSD ?? (stats.map { MockChartData.generate(currentValue: $0.totalMarketValueUSD) } ?? [])
+
+        guard !chartDataUSD.isEmpty else {
+            convertedChartData = []
+            return
+        }
+
+        guard defaultCurrency != "USD" else {
+            convertedChartData = chartDataUSD
+            return
+        }
+
+        do {
+            let rate = try await CurrencyService.shared.getRate(from: "USD", to: defaultCurrency)
+            let rateDouble = Double(truncating: rate as NSDecimalNumber)
+            convertedChartData = chartDataUSD.map { point in
+                ChartDataPoint(date: point.date, value: point.value * rateDouble)
+            }
+        } catch {
+            convertedChartData = chartDataUSD
+        }
     }
 
     private func deleteItem(_ item: CollectionItem) {
