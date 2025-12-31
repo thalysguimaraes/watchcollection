@@ -6,14 +6,27 @@ from typing import Dict, List, Optional, Tuple
 from email.utils import formatdate
 import json
 import os
+import uuid
+import time
 from pathlib import Path
 import threading
+
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
+
+from middleware import limiter, setup_logging
+from routes import auth_router, market_router, admin_router, ai_router
 
 app = FastAPI(
     title="Watch Catalog API",
     description="API for watch collection catalog data",
-    version="2.0.0"
+    version="2.0.0",
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+logger = setup_logging()
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,6 +36,52 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+
+@app.middleware("http")
+async def add_request_tracking(request: Request, call_next):
+    request_id = str(uuid.uuid4())
+    request.state.request_id = request_id
+
+    start_time = time.time()
+
+    try:
+        response = await call_next(request)
+        latency_ms = int((time.time() - start_time) * 1000)
+
+        logger.info(
+            "request_completed",
+            extra={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "latency_ms": latency_ms,
+            },
+        )
+
+        response.headers["X-Request-ID"] = request_id
+        return response
+    except Exception as e:
+        latency_ms = int((time.time() - start_time) * 1000)
+
+        logger.error(
+            "request_failed",
+            extra={
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "latency_ms": latency_ms,
+                "error": str(e),
+            },
+        )
+        raise
+
+
+app.include_router(auth_router)
+app.include_router(market_router)
+app.include_router(admin_router)
+app.include_router(ai_router)
 
 DATA_DIR = Path(__file__).parent / "data"
 
@@ -293,11 +352,6 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
-
-
-@app.get("/config")
-async def get_config():
-    return {"anthropic_api_key": os.environ.get("ANTHROPIC_API_KEY", "")}
 
 
 @app.get("/catalog", response_model=CatalogResponse)
