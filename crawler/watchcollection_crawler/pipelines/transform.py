@@ -88,32 +88,13 @@ def transform_movement(wc_model: dict) -> Optional[dict]:
     return None
 
 
-def transform_price_history(history_data: Optional[dict]) -> Optional[dict]:
-    if not history_data:
-        return None
-    points = history_data.get("points", [])
-    if not points:
-        return None
-    compressed = []
-    for pt in points:
-        ts = pt.get("timestamp")
-        price = pt.get("price")
-        if ts is not None and price is not None:
-            compressed.append([ts, round(price, 2)])
-    if not compressed:
-        return None
-    return {
-        "source": history_data.get("source", "unknown"),
-        "points": compressed,
-    }
-
-
 def transform_model(
     wc_model: dict,
     image_manifest: dict,
     brand_name: str,
     brand_slug: str,
     db_conn: Optional[Connection] = None,
+    chrono24_model: Optional[dict] = None,
 ) -> dict:
     wc_id = str(wc_model.get("watchcharts_id", ""))
 
@@ -133,6 +114,14 @@ def transform_model(
             "max_usd": db_price["max_usd"],
             "listings": db_price["listings"],
             "updated_at": db_price["updated_at"],
+        }
+    elif chrono24_model and chrono24_model.get("market_price_usd"):
+        market_price = {
+            "median_usd": chrono24_model["market_price_usd"],
+            "min_usd": chrono24_model.get("market_price_min_usd"),
+            "max_usd": chrono24_model.get("market_price_max_usd"),
+            "listings": chrono24_model.get("market_price_listings"),
+            "updated_at": chrono24_model.get("market_price_updated_at") or datetime.now().isoformat(),
         }
     elif wc_model.get("market_price_usd"):
         market_price = {
@@ -171,9 +160,6 @@ def transform_model(
                 "points": db_points,
             }
 
-    if market_price_history is None:
-        market_price_history = transform_price_history(wc_model.get("market_price_history"))
-
     display_name = clean_display_name(wc_model["full_name"], brand_name, brand_slug)
 
     existing_aliases = wc_model.get("reference_aliases", [])
@@ -207,10 +193,18 @@ def transform_brand(
     wc_data: dict,
     image_manifest: dict,
     db_conn: Optional[Connection] = None,
+    chrono24_data: Optional[dict] = None,
 ) -> dict:
     brand_slug = wc_data.get("brand_slug") or slugify(wc_data.get("brand", ""))
     brand_name = wc_data.get("brand", brand_slug)
     meta = resolve_brand_meta(brand_slug, brand_name)
+
+    chrono24_lookup: dict[str, dict] = {}
+    if chrono24_data:
+        for m in chrono24_data.get("models", []):
+            wc_id = m.get("watchcharts_id")
+            if wc_id:
+                chrono24_lookup[str(wc_id)] = m
 
     return {
         "id": brand_slug,
@@ -218,17 +212,26 @@ def transform_brand(
         "country": meta["country"],
         "tier": meta["tier"],
         "models": [
-            transform_model(m, image_manifest, brand_name, brand_slug, db_conn)
+            transform_model(
+                m,
+                image_manifest,
+                brand_name,
+                brand_slug,
+                db_conn,
+                chrono24_lookup.get(str(m.get("watchcharts_id", ""))),
+            )
             for m in wc_data.get("models", [])
         ],
     }
 
 
 def iter_brand_files(input_dir: Path, brand_slug: Optional[str]) -> list[Path]:
+    """Return base WatchCharts JSON files only (never _chrono24.json).
+
+    Field-level enrichment from chrono24 is handled separately via
+    load_chrono24_enrichment().
+    """
     if brand_slug:
-        chrono = input_dir / f"{brand_slug}_chrono24.json"
-        if chrono.exists():
-            return [chrono]
         return [input_dir / f"{brand_slug}.json"]
 
     skip_files = {
@@ -254,14 +257,18 @@ def iter_brand_files(input_dir: Path, brand_slug: Optional[str]) -> list[Path]:
             continue
         if json_file.name.endswith(skip_suffixes):
             continue
-        slug = json_file.stem
-        chrono = input_dir / f"{slug}_chrono24.json"
-        if chrono.exists():
-            files.append(chrono)
-        else:
-            files.append(json_file)
+        files.append(json_file)
 
     return sorted(files)
+
+
+def load_chrono24_enrichment(input_dir: Path, slug: str) -> Optional[dict]:
+    """Load chrono24 enrichment file if it exists."""
+    chrono_file = input_dir / f"{slug}_chrono24.json"
+    if chrono_file.exists():
+        with open(chrono_file) as f:
+            return json.load(f)
+    return None
 
 
 def transform_all(
@@ -289,11 +296,16 @@ def transform_all(
                 wc_data = json.load(f)
 
             slug = wc_data.get("brand_slug") or json_file.stem
+
+            chrono24_data = load_chrono24_enrichment(input_dir, slug)
+            if chrono24_data:
+                print(f"  Loaded chrono24 enrichment for {slug}")
+
             image_manifest = load_image_manifest(manifest_dir, slug)
             if image_manifest:
                 print(f"  Loaded manifest for {slug}: {len(image_manifest)} images")
 
-            brand = transform_brand(wc_data, image_manifest, db_conn)
+            brand = transform_brand(wc_data, image_manifest, db_conn, chrono24_data)
             brands.append(brand)
             print(f"  -> {brand['name']}: {len(brand['models'])} models")
 

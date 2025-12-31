@@ -24,8 +24,21 @@
 - Transform WatchCharts output into API bundle:
   - `python3 -m watchcollection_crawler.pipelines.transform`
   - `python3 -m watchcollection_crawler.pipelines.transform --brand-slug rolex`
-  - Uses marketdata DB for `market_price` and `market_price_history` when available
   - Override DB path: `--marketdata-db ./custom.sqlite`
+
+## Transform Field Precedence
+
+Transform uses **field-level merge** (not file-level selection):
+
+| Field | Precedence (first available wins) |
+|-------|-----------------------------------|
+| `market_price` | DB (chrono24 snapshot) → `_chrono24.json` → base `.json` |
+| `market_price_history` | DB only (watchcharts_csv + chrono24 combined) |
+| All other fields | Base `.json` only |
+
+- Base file `<slug>.json` is always loaded (catalog source of truth)
+- Chrono24 enrichment `<slug>_chrono24.json` is optional (used only for `market_price` fallback)
+- Output is deterministic given (catalog JSON + marketdata DB)
 
 ## Backfill Import
 
