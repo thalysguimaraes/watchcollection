@@ -18,6 +18,9 @@
   - `python3 -m watchcollection_crawler.pipelines.images --brand rolex`
 - Chrono24 market price enrichment:
   - `python3 -m watchcollection_crawler.pipelines.chrono24_market --brand rolex --listings 40 --min-listings 6`
+  - Writes snapshots to marketdata DB by default (use `--no-write-db` to disable)
+  - Override snapshot date: `--as-of-date 2024-01-15`
+  - Override DB path: `--db-path ./custom.sqlite`
 - Transform WatchCharts output into API bundle:
   - `python3 -m watchcollection_crawler.pipelines.transform`
   - `python3 -m watchcollection_crawler.pipelines.transform --brand-slug rolex`

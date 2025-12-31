@@ -15,14 +15,15 @@ Anything outside of these sources is considered legacy and should not be reintro
 
 ## Output files
 - Base: `output_watchcharts/{brand_slug}.json`
-- Chrono24 market price: `output_watchcharts/{brand_slug}_chrono24.json`
+- Chrono24 market price: `output_watchcharts/{brand_slug}_chrono24.json` (JSON) + `output/marketdata.sqlite` (DB)
 - API bundle: `api/data/catalog_bundle.json`
 
 ## Commands (manual)
 - WatchCharts crawl (Bright Data required):
   - `python3 -m watchcollection_crawler.pipelines.watchcharts --entry-url "https://watchcharts.com/watches?filters=..." --brand "Rolex" --brand-slug rolex --backend brightdata`
-- Chrono24 market price:
+- Chrono24 market price (writes to DB by default):
   - `python3 -m watchcollection_crawler.pipelines.chrono24_market --brand rolex --listings 40 --min-listings 6`
+  - Use `--no-write-db` to skip DB writes, `--as-of-date YYYY-MM-DD` to override date
 - Transform bundle:
   - `python3 -m watchcollection_crawler.pipelines.transform`
 - Deploy API:

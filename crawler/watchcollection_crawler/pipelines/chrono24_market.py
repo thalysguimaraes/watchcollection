@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import json as json_module
 import os
 import re
+import sqlite3
 import statistics
 import time
-from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from datetime import date, datetime, timezone
+from pathlib import Path
+from typing import Optional, List, Dict, Any, Tuple
 
 try:
     from dotenv import load_dotenv
@@ -14,8 +17,17 @@ except Exception:
     load_dotenv = None
 
 from watchcollection_crawler.core.curl_impersonate import CurlImpersonateClient
-from watchcollection_crawler.core.paths import WATCHCHARTS_OUTPUT_DIR
+from watchcollection_crawler.core.paths import WATCHCHARTS_OUTPUT_DIR, MARKETDATA_DB_PATH
 from watchcollection_crawler.sources import chrono24 as chrono24_source
+from watchcollection_crawler.marketdata import (
+    get_db,
+    start_ingest_run,
+    finish_ingest_run,
+    upsert_snapshot,
+    MarketSnapshot,
+    IngestStats,
+    SnapshotSource,
+)
 
 PRICE_MIN = 500
 PRICE_MAX = 5_000_000
@@ -113,13 +125,17 @@ def resolve_input_output(
 def enrich_models(
     data: Dict[str, Any],
     brand_name: str,
+    brand_slug: str,
     listings_per_model: int,
     min_listings: int,
     currency: Optional[str],
     overwrite: bool,
     limit: Optional[int],
     sleep_s: float,
-) -> Dict[str, Any]:
+    db_conn: Optional[sqlite3.Connection] = None,
+    as_of_date: Optional[date] = None,
+    write_db: bool = True,
+) -> Tuple[Dict[str, Any], IngestStats]:
     models = data.get("models", [])
     total = len(models)
     if limit and limit > 0:
@@ -133,6 +149,7 @@ def enrich_models(
     updated = 0
     skipped = 0
     missing_prices = 0
+    db_stats = IngestStats()
 
     client = CurlImpersonateClient()
 
@@ -191,6 +208,32 @@ def enrich_models(
         model["chrono24_currency"] = currency
         model["chrono24_listings_count"] = len(listings)
 
+        if write_db and db_conn is not None:
+            wc_id = model.get("watchcharts_id")
+            if wc_id:
+                snapshot = MarketSnapshot(
+                    watchcharts_id=wc_id,
+                    brand_slug=brand_slug,
+                    reference=ref,
+                    as_of_date=as_of_date or date.today(),
+                    source=SnapshotSource.CHRONO24,
+                    currency="USD",
+                    median_usd=stats["median"] * 100,
+                    min_usd=stats["min"] * 100,
+                    max_usd=stats["max"] * 100,
+                    listings_count=stats["count"],
+                    raw_json=json_module.dumps({
+                        "listings_fetched": len(listings),
+                        "prices_parsed": len(prices),
+                    }),
+                )
+                upsert_snapshot(db_conn, snapshot)
+                db_stats.rows_out += 1
+                db_stats.rows_in += 1
+            else:
+                db_stats.warnings += 1
+                print(f"  - WARNING: no watchcharts_id, skipping DB write", flush=True)
+
         updated += 1
         print(
             f"  - median ${stats['median']:,} (min ${stats['min']:,}, max ${stats['max']:,}, n={stats['count']})",
@@ -204,7 +247,7 @@ def enrich_models(
     data["chrono24_market_updated_count"] = updated
     data["chrono24_market_skipped_count"] = skipped
     data["chrono24_market_missing_prices"] = missing_prices
-    return data
+    return data, db_stats
 
 
 def main() -> None:
@@ -220,6 +263,10 @@ def main() -> None:
     parser.add_argument("--sleep", type=float, default=2.0, help="Sleep between models (seconds, default 2.0 for rate limiting)")
     parser.add_argument("--dry-run", action="store_true", help="Only show matches without saving")
     parser.add_argument("--env-file", type=str, help="Path to .env file")
+    parser.add_argument("--write-db", action="store_true", default=True, help="Write snapshots to marketdata DB (default: true)")
+    parser.add_argument("--no-write-db", action="store_false", dest="write_db", help="Disable DB writes")
+    parser.add_argument("--db-path", type=str, default=None, help="Override marketdata DB path")
+    parser.add_argument("--as-of-date", type=str, default=None, help="Override snapshot date (YYYY-MM-DD, default: today UTC)")
 
     args = parser.parse_args()
 
@@ -237,19 +284,60 @@ def main() -> None:
 
     brand_name = data.get("brand") or brand_slug
 
-    if args.dry_run:
-        print("DRY RUN: no files will be written", flush=True)
+    snapshot_date = date.fromisoformat(args.as_of_date) if args.as_of_date else date.today()
+    db_path = Path(args.db_path) if args.db_path else MARKETDATA_DB_PATH
+    should_write_db = args.write_db and not args.dry_run
 
-    enriched = enrich_models(
-        data=data,
-        brand_name=brand_name,
-        listings_per_model=args.listings,
-        min_listings=args.min_listings,
-        currency=args.currency,
-        overwrite=args.overwrite,
-        limit=args.limit,
-        sleep_s=args.sleep,
-    )
+    if args.dry_run:
+        print("DRY RUN: no files or DB writes will be made", flush=True)
+
+    if should_write_db:
+        with get_db(db_path) as conn:
+            meta = {
+                "brand": brand_name,
+                "brand_slug": brand_slug,
+                "input_file": input_file,
+                "output_file": output_file,
+                "limit": args.limit,
+                "listings_per_model": args.listings,
+                "as_of_date": snapshot_date.isoformat(),
+            }
+            run_id = start_ingest_run(conn, "chrono24_market", json_module.dumps(meta))
+
+            enriched, db_stats = enrich_models(
+                data=data,
+                brand_name=brand_name,
+                brand_slug=brand_slug,
+                listings_per_model=args.listings,
+                min_listings=args.min_listings,
+                currency=args.currency,
+                overwrite=args.overwrite,
+                limit=args.limit,
+                sleep_s=args.sleep,
+                db_conn=conn,
+                as_of_date=snapshot_date,
+                write_db=True,
+            )
+
+            ok = db_stats.errors == 0
+            finish_ingest_run(conn, run_id, db_stats, ok=ok)
+
+            print(f"DB: {db_stats.rows_out} snapshots written, {db_stats.warnings} warnings", flush=True)
+    else:
+        enriched, _ = enrich_models(
+            data=data,
+            brand_name=brand_name,
+            brand_slug=brand_slug,
+            listings_per_model=args.listings,
+            min_listings=args.min_listings,
+            currency=args.currency,
+            overwrite=args.overwrite,
+            limit=args.limit,
+            sleep_s=args.sleep,
+            db_conn=None,
+            as_of_date=snapshot_date,
+            write_db=False,
+        )
 
     if not args.dry_run:
         with open(output_file, "w") as f:
