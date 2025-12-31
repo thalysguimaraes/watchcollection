@@ -32,6 +32,7 @@ except Exception:
     load_dotenv = None
 
 from watchcollection_crawler.core.anticaptcha import AntiCaptchaClient, AntiCaptchaProxy, detect_turnstile
+from watchcollection_crawler.core.curl_impersonate import AsyncCurlImpersonateClient
 from watchcollection_crawler.core.flaresolverr import FlareSolverrClient
 from watchcollection_crawler.core.paths import WATCHCHARTS_OUTPUT_DIR
 from watchcollection_crawler.core.playwright_stealth import PlaywrightStealthClient
@@ -289,8 +290,8 @@ class WatchChartsFetcher:
         if backend_choice in {"brightdata", "brightdata-api", "brightdata-webaccess"}:
             backend_choice = "brightdata"
         if backend_choice == "curl" and not CurlAsyncSession:
-            raise RuntimeError("curl_cffi is not installed; install it or use --backend httpx")
-        if backend_choice not in {"curl", "httpx", "brightdata"}:
+            raise RuntimeError("curl_cffi is not installed; install it or use --backend httpx or --backend curl-impersonate")
+        if backend_choice not in {"curl", "httpx", "brightdata", "curl-impersonate"}:
             raise RuntimeError(f"Unknown backend '{backend_choice}'")
         if backend_choice == "brightdata" and (not brightdata_api_key or not brightdata_zone):
             raise RuntimeError("Bright Data backend requires --brightdata-api-key and --brightdata-zone")
@@ -306,6 +307,7 @@ class WatchChartsFetcher:
         self._impersonate = impersonate_list[0]
 
         self._curl: Optional[Any] = None
+        self._curl_impersonate: Optional[AsyncCurlImpersonateClient] = None
         self._httpx: Optional[httpx.AsyncClient] = None
 
         max_conn = max(10, concurrency * 2)
@@ -330,6 +332,12 @@ class WatchChartsFetcher:
                 headers=DEFAULT_HEADERS.copy(),
                 impersonate=self._impersonate,
                 proxy=self._proxy_url,
+            )
+        elif self._backend == "curl-impersonate":
+            self._curl_impersonate = AsyncCurlImpersonateClient(
+                timeout=int(timeout),
+                max_concurrent=concurrency,
+                use_docker=True,
             )
         else:
             self._httpx = httpx.AsyncClient(
@@ -372,6 +380,8 @@ class WatchChartsFetcher:
 
         if self._backend == "brightdata":
             print("Using Bright Data Web Unlocker API")
+        elif self._backend == "curl-impersonate":
+            print("Using curl-impersonate (Docker)")
 
         try:
             status_code, text = await self._get(bootstrap_url)
@@ -540,6 +550,8 @@ class WatchChartsFetcher:
     async def _get(self, url: str, session_id: Optional[str] = None) -> tuple[int, str]:
         if self._backend == "brightdata":
             return await self._brightdata_request(url, None, session_id=session_id)
+        if self._curl_impersonate:
+            return await self._curl_impersonate.get_status(url)
         if self._curl:
             resp = await self._curl.get(
                 url,
@@ -562,6 +574,8 @@ class WatchChartsFetcher:
             return await self._brightdata_request(url, headers, session_id=session_id)
         if not headers:
             return await self._get(url, session_id=session_id)
+        if self._curl_impersonate:
+            return await self._curl_impersonate.get_status(url, headers=headers)
         if self._curl:
             resp = await self._curl.get(
                 url,
@@ -753,6 +767,32 @@ class WatchChartsFetcher:
                 text = await self._pw.get_text(url, wait_for_cf=True, cf_timeout=self._anti_captcha_timeout)
                 self._pw_failures = 0
                 return text
+            except Exception as exc:
+                self._note_pw_failure(exc)
+                return None
+
+    async def _fetch_json_via_playwright(self, url: str, headers: Optional[dict] = None) -> Optional[str]:
+        if self._pw_disabled():
+            return None
+        if not self._pw or not self._pw._page:
+            return None
+        async with self._pw_sem:
+            try:
+                header_obj = json.dumps(headers) if headers else "{}"
+                result = await self._pw._page.evaluate(
+                    f"""
+                    async () => {{
+                        const resp = await fetch("{url}", {{
+                            method: "GET",
+                            headers: {header_obj},
+                            credentials: "same-origin"
+                        }});
+                        return await resp.text();
+                    }}
+                    """
+                )
+                self._pw_failures = 0
+                return result
             except Exception as exc:
                 self._note_pw_failure(exc)
                 return None
@@ -1602,10 +1642,30 @@ async def fetch_price_history(
             print(f"[{watch_id}] price history via flaresolverr")
             return history
 
-        if fetcher._backend == "brightdata":
-            pw_text = await fetcher._fetch_via_playwright_text(chart_url)
-            if pw_text:
-                text = pw_text
+        if fetcher._backend in {"brightdata", "curl-impersonate"}:
+            pw_html = await fetcher._fetch_via_playwright_text(full_url)
+            if pw_html:
+                pw_soup = make_soup(pw_html)
+                pw_csrf = extract_csrf_token(pw_soup, pw_html)
+                if pw_csrf:
+                    pw_region, pw_var_id = extract_price_history_context(pw_soup)
+                    effective_region = region_id if region_id is not None else pw_region
+                    pw_key = build_appraisal_key(effective_region)
+                    pw_chart_url = (
+                        f"{base_url}/charts/watch/{watch_id}.json?type=trend&key={pw_key}"
+                        f"&variation_id={pw_var_id}&mobile=0"
+                    )
+                    pw_headers = build_chart_headers(pw_csrf, full_url)
+                    pw_text = await fetcher._fetch_json_via_playwright(pw_chart_url, pw_headers)
+                    if pw_text:
+                        text = pw_text
+                        print(f"[{watch_id}] price history via playwright")
+                    else:
+                        print(f"[{watch_id}] price history fetch failed: {exc}")
+                        return None
+                else:
+                    print(f"[{watch_id}] price history fetch failed: no csrf token via playwright")
+                    return None
             else:
                 print(f"[{watch_id}] price history fetch failed: {exc}")
                 return None
@@ -2766,7 +2826,7 @@ def main() -> None:
     parser.add_argument("--concurrency", type=int, default=6, help="Max concurrent detail fetches")
     parser.add_argument("--timeout", type=float, default=30.0, help="Request timeout in seconds")
     parser.add_argument("--retries", type=int, default=1, help="Retry count per request")
-    parser.add_argument("--backend", type=str, default="brightdata", help="HTTP backend: brightdata (preferred), curl, httpx")
+    parser.add_argument("--backend", type=str, default="brightdata", help="HTTP backend: curl-impersonate (Docker), brightdata, curl (curl_cffi), httpx")
     parser.add_argument("--impersonate", type=str, default="chrome120", help="curl_cffi impersonation profile(s), comma-separated")
     parser.add_argument("--retry-rounds", type=int, default=2, help="Recursive retry rounds per batch")
     parser.add_argument("--retry-delay", type=float, default=2.0, help="Base delay between retry rounds in seconds")

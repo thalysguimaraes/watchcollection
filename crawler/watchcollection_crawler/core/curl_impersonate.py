@@ -138,12 +138,12 @@ class CurlImpersonateClient:
                 cmd,
                 capture_output=True,
                 timeout=effective_timeout,
-                text=True,
             )
             if result.returncode != 0:
-                raise RuntimeError(f"curl-impersonate failed: {result.stderr.strip()}")
+                stderr = result.stderr.decode("utf-8", errors="replace").strip()
+                raise RuntimeError(f"curl-impersonate failed: {stderr}")
 
-            output = result.stdout
+            output = result.stdout.decode("utf-8", errors="replace")
             status_code = int(output[-3:])
             body = output[:-3]
             return status_code, body
