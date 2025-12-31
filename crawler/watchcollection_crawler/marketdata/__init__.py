@@ -28,6 +28,14 @@ from .import_watchcharts_csv import (
     build_catalog_lookup,
     iter_csv_files,
 )
+from .series import (
+    get_history_points,
+    get_combined_source_label,
+    get_latest_price,
+    get_all_snapshots,
+    downsample_weekly,
+    HistoryPoint,
+)
 
 __all__ = [
     "get_conn",
@@ -54,4 +62,10 @@ __all__ = [
     "parse_csv_row",
     "build_catalog_lookup",
     "iter_csv_files",
+    "get_history_points",
+    "get_combined_source_label",
+    "get_latest_price",
+    "get_all_snapshots",
+    "downsample_weekly",
+    "HistoryPoint",
 ]

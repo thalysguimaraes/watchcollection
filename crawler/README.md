@@ -24,6 +24,8 @@
 - Transform WatchCharts output into API bundle:
   - `python3 -m watchcollection_crawler.pipelines.transform`
   - `python3 -m watchcollection_crawler.pipelines.transform --brand-slug rolex`
+  - Uses marketdata DB for `market_price` and `market_price_history` when available
+  - Override DB path: `--marketdata-db ./custom.sqlite`
 
 ## Backfill Import
 
