@@ -16,6 +16,30 @@ from urllib.parse import urlparse, urlencode, parse_qs, urlunparse, unquote
 import httpx
 from bs4 import BeautifulSoup, FeatureNotFound
 
+# Fallback stubs: requirements no longer include Playwright/AntiCaptcha/FlareSolverr.
+# The crawler uses curl-impersonate; these are placeholders to keep imports working.
+class AntiCaptchaProxy:  # pragma: no cover - stub
+    def __init__(self, *args, **kwargs) -> None:
+        pass
+
+
+class AntiCaptchaClient:  # pragma: no cover - stub
+    def __init__(self, *args, **kwargs) -> None:
+        pass
+
+    def get_balance(self) -> float:
+        return 0.0
+
+
+class FlareSolverrClient:  # pragma: no cover - stub
+    async def request(self, *args, **kwargs):
+        raise RuntimeError("FlareSolverr is disabled in this build")
+
+
+class PlaywrightStealthClient:  # pragma: no cover - stub
+    async def get_page(self, *args, **kwargs):
+        raise RuntimeError("Playwright is disabled in this build")
+
 try:
     from curl_cffi.requests import AsyncSession as CurlAsyncSession
 except Exception:
@@ -46,13 +70,9 @@ sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
 DEFAULT_WATCHCHARTS_BASE = "https://watchcharts.com"
-DEFAULT_BRIGHTDATA_ENDPOINT = "https://api.brightdata.com/request"
-DEFAULT_BRIGHTDATA_FORMAT = "raw"
 CHALLENGE_TEXT_MARKERS = ("just a moment", "attention required", "checking your browser")
 HTML_PARSER = "lxml"
 LISTING_PAGE_SIZE = 24
-CHALLENGE_THRESHOLD_DEFAULT = 0.6
-CHALLENGE_MIN_COUNT = 5
 LISTING_TERMINAL_HTTP = {"http 400", "http 404", "http 410"}
 LISTING_RETRIES = 2
 LISTING_RETRY_DELAY = 2.0
@@ -175,15 +195,6 @@ def classify_failure(reason: str) -> str:
     return "other"
 
 
-def should_rotate_credentials(failed_urls: List[dict], threshold: float) -> bool:
-    if not failed_urls or len(failed_urls) < CHALLENGE_MIN_COUNT:
-        return False
-    challenge_count = sum(1 for f in failed_urls if classify_failure(f.get("reason", "")) == "challenge")
-    if challenge_count == 0:
-        return False
-    return (challenge_count / len(failed_urls)) >= threshold
-
-
 def is_listing_terminal_error(exc: Exception) -> bool:
     message = str(exc).lower()
     return any(token in message for token in LISTING_TERMINAL_HTTP)
@@ -199,92 +210,26 @@ class WatchChartsFetcher:
         concurrency: int,
         timeout: float,
         retries: int,
-        use_anticaptcha: bool,
-        ac_concurrency: int,
-        ac_timeout: float,
         backend: str,
         impersonate: str,
-        pw_headless: bool = True,
-        anti_captcha_key: Optional[str] = None,
         proxy_settings: Optional[ProxySettings] = None,
-        brightdata_api_key: Optional[str] = None,
-        brightdata_zone: Optional[str] = None,
-        brightdata_endpoint: str = DEFAULT_BRIGHTDATA_ENDPOINT,
-        brightdata_format: str = DEFAULT_BRIGHTDATA_FORMAT,
         session_cookies: Optional[List[dict]] = None,
     ) -> None:
+        # Only support curl-impersonate, curl_cffi, or httpx (no Playwright/AntiCaptcha/BrightData).
         self.retries = max(0, retries)
-        self._ac: Optional[AntiCaptchaClient] = None
-        self._ac_enabled = use_anticaptcha
-        self._ac_timeout = max(30.0, ac_timeout)
-        self._ac_sem = asyncio.Semaphore(max(1, ac_concurrency))
-        self._refresh_lock = asyncio.Lock()
-        self._last_refresh = 0.0
-        self._refresh_min_interval = 60.0
-        self._ac_failures = 0
-        self._ac_disable_until = 0.0
         self._bootstrap_url: Optional[str] = None
         self._stale_clients: List[Any] = []
 
-        self._pw: Optional[PlaywrightStealthClient] = None
-        self._pw_headless = pw_headless
-        self._pw_timeout = max(30.0, ac_timeout)
-        self._pw_sem = asyncio.Semaphore(1)
-        self._pw_failures = 0
-        self._pw_disable_until = 0.0
-        self._anti_captcha_key = anti_captcha_key
-        self._anti_captcha_timeout = ac_timeout
         self._proxy_settings = proxy_settings
         self._proxy_url = proxy_settings.url if proxy_settings else None
-        self._pw_proxy = None
-        self._ac_proxy = None
-        self._brightdata_api_key = brightdata_api_key
-        self._brightdata_zone = brightdata_zone
-        self._brightdata_endpoint = brightdata_endpoint or DEFAULT_BRIGHTDATA_ENDPOINT
-        self._brightdata_format = brightdata_format or DEFAULT_BRIGHTDATA_FORMAT
-        self._brightdata_client: Optional[httpx.AsyncClient] = None
-        self._fs_enabled = bool(os.getenv("USE_FLARESOLVERR")) or bool(os.getenv("FLARESOLVERR_URL"))
-        self._fs_client: Optional[FlareSolverrClient] = FlareSolverrClient() if self._fs_enabled else None
-        self._fs_sem = asyncio.Semaphore(1)
-        self._fs_lock = asyncio.Lock()
-        self._fs_failures = 0
-        self._fs_disable_until = 0.0
 
-        if proxy_settings:
-            self._pw_proxy = {"server": proxy_settings.server}
-            if proxy_settings.username:
-                self._pw_proxy["username"] = proxy_settings.username
-            if proxy_settings.password:
-                self._pw_proxy["password"] = proxy_settings.password
-            self._ac_proxy = AntiCaptchaProxy(
-                proxy_type=proxy_settings.proxy_type,
-                address=urlparse(proxy_settings.server).hostname or "",
-                port=urlparse(proxy_settings.server).port or 0,
-                login=proxy_settings.username,
-                password=proxy_settings.password,
-            )
-
-        if use_anticaptcha and anti_captcha_key:
-            self._ac = AntiCaptchaClient(
-                api_key=anti_captcha_key,
-                timeout=int(ac_timeout),
-                proxy=self._ac_proxy,
-            )
-
-        backend_choice = (backend or "auto").lower()
+        backend_choice = (backend or "curl-impersonate").lower()
         if backend_choice == "auto":
             backend_choice = "curl" if CurlAsyncSession else "httpx"
-        if backend_choice in {"brightdata", "brightdata-api", "brightdata-webaccess"}:
-            backend_choice = "brightdata"
-        if backend_choice == "curl" and not CurlAsyncSession:
-            raise RuntimeError("curl_cffi is not installed; install it or use --backend httpx or --backend curl-impersonate")
-        if backend_choice not in {"curl", "httpx", "brightdata", "curl-impersonate"}:
+        if backend_choice not in {"curl", "httpx", "curl-impersonate"}:
             raise RuntimeError(f"Unknown backend '{backend_choice}'")
-        if backend_choice == "brightdata" and (not brightdata_api_key or not brightdata_zone):
-            raise RuntimeError("Bright Data backend requires --brightdata-api-key and --brightdata-zone")
-        if backend_choice == "brightdata":
-            self._ac_enabled = False
-            self._ac = None
+        if backend_choice == "curl" and not CurlAsyncSession:
+            raise RuntimeError("curl_cffi is not installed; use --backend httpx or --backend curl-impersonate")
         self._backend = backend_choice
         self._timeout = timeout
 
@@ -305,16 +250,7 @@ class WatchChartsFetcher:
         )
         timeout_cfg = httpx.Timeout(timeout, connect=min(timeout, 10.0))
 
-        if self._backend == "brightdata":
-            self._brightdata_client = httpx.AsyncClient(
-                headers={
-                    "Authorization": f"Bearer {self._brightdata_api_key}",
-                    "Content-Type": "application/json",
-                },
-                timeout=timeout_cfg,
-                limits=limits,
-            )
-        elif self._backend == "curl":
+        if self._backend == "curl":
             self._curl = CurlAsyncSession(
                 headers=DEFAULT_HEADERS.copy(),
                 impersonate=self._impersonate,
@@ -365,9 +301,7 @@ class WatchChartsFetcher:
     async def start(self, bootstrap_url: str) -> None:
         self._bootstrap_url = bootstrap_url
 
-        if self._backend == "brightdata":
-            print("Using Bright Data Web Unlocker API")
-        elif self._backend == "curl-impersonate":
+        if self._backend == "curl-impersonate":
             print("Using curl-impersonate (Docker)")
 
         try:
@@ -377,11 +311,7 @@ class WatchChartsFetcher:
                 return
         except Exception as exc:
             print(f"Bootstrap request failed ({exc})")
-
-        if self._backend == "brightdata":
-            print("Bright Data request failed; check API key, zone, and credits.")
-            return
-        print("Note: Challenges will be handled via Playwright fallback")
+        # If challenged, the crawl will retry per-request with backoff.
 
     async def close(self) -> None:
         if self._httpx:
@@ -398,39 +328,6 @@ class WatchChartsFetcher:
                 result = close()
                 if inspect.isawaitable(result):
                     await result
-        if self._brightdata_client:
-            await self._brightdata_client.aclose()
-
-    def _apply_solution(self, solution: dict) -> None:
-        user_agent = solution.get("userAgent")
-        if user_agent:
-            if self._httpx:
-                self._httpx.headers["User-Agent"] = user_agent
-            if self._curl:
-                self._curl.headers["User-Agent"] = user_agent
-
-        cf_cookie = solution.get("cf_clearance")
-        if cf_cookie:
-            print(f"Applying cf_clearance: domain={cf_cookie.get('domain')}, value={cf_cookie.get('value', '')[:20]}...")
-
-        for cookie in solution.get("cookies", []):
-            name = cookie.get("name")
-            if not name:
-                continue
-            if self._httpx:
-                self._httpx.cookies.set(
-                    name,
-                    cookie.get("value", ""),
-                    domain=cookie.get("domain"),
-                    path=cookie.get("path") or "/",
-                )
-            if self._curl:
-                self._curl.cookies.set(
-                    name,
-                    cookie.get("value", ""),
-                    domain=cookie.get("domain"),
-                    path=cookie.get("path") or "/",
-                )
 
     def _next_impersonate(self) -> Optional[str]:
         if len(self._impersonate_list) <= 1:
@@ -450,49 +347,7 @@ class WatchChartsFetcher:
         )
         self._impersonate = impersonate
 
-    async def _brightdata_request(
-        self,
-        url: str,
-        headers: Optional[dict],
-        session_id: Optional[str] = None,
-    ) -> tuple[int, str]:
-        if not self._brightdata_client:
-            raise RuntimeError("Bright Data client not initialized")
-        merged_headers = DEFAULT_HEADERS.copy()
-        if headers:
-            merged_headers.update(headers)
-        cookie_header = self.get_cookie_header()
-        if cookie_header:
-            merged_headers["Cookie"] = cookie_header
-        payload = {
-            "zone": self._brightdata_zone,
-            "url": url,
-            "format": self._brightdata_format,
-            "headers": merged_headers,
-            "country": "us",
-        }
-        resp = await self._brightdata_client.post(self._brightdata_endpoint, json=payload)
-        brd_error = resp.headers.get("x-brd-error") or resp.headers.get("x-luminati-error")
-        if brd_error:
-            raise RuntimeError(f"Bright Data error: {brd_error}")
-        content_type = resp.headers.get("content-type", "").lower()
-        if "application/json" in content_type:
-            try:
-                data = resp.json()
-            except ValueError:
-                data = None
-            if isinstance(data, dict):
-                for key in ("response", "body", "data"):
-                    if isinstance(data.get(key), str):
-                        return resp.status_code, data[key]
-                error = data.get("error") or data.get("message")
-                if error:
-                    raise RuntimeError(f"Bright Data API error: {error}")
-        return resp.status_code, resp.text
-
     async def _get(self, url: str, session_id: Optional[str] = None) -> tuple[int, str]:
-        if self._backend == "brightdata":
-            return await self._brightdata_request(url, None, session_id=session_id)
         if self._curl_impersonate:
             return await self._curl_impersonate.get_status(url)
         if self._curl:
@@ -513,8 +368,6 @@ class WatchChartsFetcher:
         headers: Optional[dict],
         session_id: Optional[str] = None,
     ) -> tuple[int, str]:
-        if self._backend == "brightdata":
-            return await self._brightdata_request(url, headers, session_id=session_id)
         if not headers:
             return await self._get(url, session_id=session_id)
         if self._curl_impersonate:
@@ -743,7 +596,6 @@ async def crawl_listing_page(
     entry_url: str,
     page_num: int,
     fetcher: WatchChartsFetcher,
-    rotate_credentials: bool = True,
     retries: int = LISTING_RETRIES,
     retry_delay: float = LISTING_RETRY_DELAY,
 ) -> List[dict]:
@@ -763,12 +615,6 @@ async def crawl_listing_page(
             last_exc = exc
             if is_listing_terminal_error(exc):
                 raise
-            if is_challenge_error(exc) and rotate_credentials:
-                rotated = await fetcher.rotate_credentials(force_new_session=True)
-                if not rotated:
-                    rotated = await fetcher.rotate_impersonate()
-                if rotated:
-                    print(f"Listing page {page_num}: rotated credentials")
             if attempt < attempts - 1 and retry_delay > 0:
                 await asyncio.sleep(retry_delay * (attempt + 1))
 
@@ -781,7 +627,6 @@ async def crawl_all_listing_pages(
     entry_url: str,
     fetcher: WatchChartsFetcher,
     max_pages: int = 100,
-    rotate_credentials: bool = True,
     listing_retries: int = LISTING_RETRIES,
     listing_retry_delay: float = LISTING_RETRY_DELAY,
 ) -> List[dict]:
@@ -794,7 +639,6 @@ async def crawl_all_listing_pages(
                 entry_url,
                 page_num=page_num,
                 fetcher=fetcher,
-                rotate_credentials=rotate_credentials,
                 retries=listing_retries,
                 retry_delay=listing_retry_delay,
             )
@@ -1067,8 +911,6 @@ async def retry_failed_rounds(
     allow_fallback: bool,
     include_price_history: bool,
     price_history_region: Optional[int],
-    rotate_credentials: bool,
-    challenge_threshold: float,
 ) -> Tuple[List[WatchChartsModelDTO], List[dict]]:
     remaining = failed_urls
     recovered: List[WatchChartsModelDTO] = []
@@ -1078,12 +920,6 @@ async def retry_failed_rounds(
             break
 
         round_num = round_idx + 1
-        if rotate_credentials and should_rotate_credentials(remaining, challenge_threshold):
-            rotated = await fetcher.rotate_credentials(force_new_session=True)
-            if not rotated:
-                rotated = await fetcher.rotate_impersonate()
-            if rotated:
-                print(f"Retry round {round_num}: rotated credentials")
 
         if retry_concurrency > 0:
             round_concurrency = retry_concurrency
@@ -1126,30 +962,18 @@ async def crawl_watchcharts_async(
     batch_size: int = 20,
     resume: bool = False,
     max_pages: int = 100,
-    headless: bool = False,
     concurrency: int = 24,
     timeout: float = 30.0,
     retries: int = 1,
-    use_anticaptcha: bool = True,
-    ac_concurrency: int = 2,
-    ac_timeout: float = 120.0,
-    backend: str = "auto",
+    backend: str = "curl-impersonate",
     impersonate: str = "chrome120",
     retry_rounds: int = 2,
     retry_delay: float = 2.0,
     retry_concurrency: int = 0,
-    rotate_credentials: bool = True,
-    challenge_threshold: float = CHALLENGE_THRESHOLD_DEFAULT,
-    pw_headless: bool = True,
     include_price_history: bool = False,
     price_history_region: Optional[int] = None,
     price_history_only: bool = False,
-    anti_captcha_key: Optional[str] = None,
     proxy_settings: Optional[ProxySettings] = None,
-    brightdata_api_key: Optional[str] = None,
-    brightdata_zone: Optional[str] = None,
-    brightdata_endpoint: str = DEFAULT_BRIGHTDATA_ENDPOINT,
-    brightdata_format: str = DEFAULT_BRIGHTDATA_FORMAT,
     session_cookies: Optional[List[dict]] = None,
 ) -> WatchChartsBrandCatalog:
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -1196,18 +1020,9 @@ async def crawl_watchcharts_async(
         concurrency=concurrency,
         timeout=timeout,
         retries=retries,
-        use_anticaptcha=use_anticaptcha,
-        ac_concurrency=ac_concurrency,
-        ac_timeout=ac_timeout,
         backend=backend,
         impersonate=impersonate,
-        pw_headless=pw_headless,
-        anti_captcha_key=anti_captcha_key,
         proxy_settings=proxy_settings,
-        brightdata_api_key=brightdata_api_key,
-        brightdata_zone=brightdata_zone,
-        brightdata_endpoint=brightdata_endpoint,
-        brightdata_format=brightdata_format,
         session_cookies=session_cookies,
     )
 
@@ -1243,12 +1058,6 @@ async def crawl_watchcharts_async(
 
             batch_num = 0
             while pending:
-                if fetcher._ac_disabled() and fetcher._ac:
-                    wait_time = fetcher._ac_disable_until - time.monotonic()
-                    if wait_time > 0:
-                        print(f"AntiCaptcha cooling down; waiting {int(wait_time)}s before continuing...")
-                        await asyncio.sleep(wait_time)
-
                 batch = pending[:batch_size]
                 pending = pending[batch_size:]
                 batch_num += 1
@@ -1323,7 +1132,6 @@ async def crawl_watchcharts_async(
                 entry_url,
                 fetcher=fetcher,
                 max_pages=listing_pages_cap,
-                rotate_credentials=rotate_credentials,
             )
             print(f"Found {len(listings)} watches total\n")
             save_checkpoint(checkpoint_file, listings_cache, failed_urls_file, models, listings, start_index)
@@ -1373,8 +1181,6 @@ async def crawl_watchcharts_async(
                     allow_fallback=True,
                     include_price_history=include_price_history,
                     price_history_region=price_history_region,
-                    rotate_credentials=rotate_credentials,
-                    challenge_threshold=challenge_threshold,
                 )
                 if retry_models:
                     batch_models.extend(retry_models)
@@ -1424,31 +1230,19 @@ async def retry_failed_async(
     brand_name: str,
     brand_slug: str,
     base_url: str,
-    headless: bool = False,
     batch_size: int = 20,
     concurrency: int = 24,
     timeout: float = 30.0,
     retries: int = 1,
-    use_anticaptcha: bool = True,
-    ac_concurrency: int = 2,
-    ac_timeout: float = 120.0,
-    backend: str = "auto",
+    backend: str = "curl-impersonate",
     impersonate: str = "chrome120",
     retry_rounds: int = 2,
     retry_delay: float = 2.0,
     retry_concurrency: int = 0,
-    rotate_credentials: bool = True,
-    challenge_threshold: float = CHALLENGE_THRESHOLD_DEFAULT,
-    pw_headless: bool = True,
     include_price_history: bool = False,
     price_history_region: Optional[int] = None,
     price_history_only: bool = False,
-    anti_captcha_key: Optional[str] = None,
     proxy_settings: Optional[ProxySettings] = None,
-    brightdata_api_key: Optional[str] = None,
-    brightdata_zone: Optional[str] = None,
-    brightdata_endpoint: str = DEFAULT_BRIGHTDATA_ENDPOINT,
-    brightdata_format: str = DEFAULT_BRIGHTDATA_FORMAT,
     session_cookies: Optional[List[dict]] = None,
 ) -> None:
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -1479,18 +1273,9 @@ async def retry_failed_async(
         concurrency=concurrency,
         timeout=timeout,
         retries=retries,
-        use_anticaptcha=use_anticaptcha,
-        ac_concurrency=ac_concurrency,
-        ac_timeout=ac_timeout,
         backend=backend,
         impersonate=impersonate,
-        pw_headless=pw_headless,
-        anti_captcha_key=anti_captcha_key,
         proxy_settings=proxy_settings,
-        brightdata_api_key=brightdata_api_key,
-        brightdata_zone=brightdata_zone,
-        brightdata_endpoint=brightdata_endpoint,
-        brightdata_format=brightdata_format,
         session_cookies=session_cookies,
     )
 
@@ -1535,8 +1320,6 @@ async def retry_failed_async(
                     allow_fallback=True,
                     include_price_history=include_price_history,
                     price_history_region=price_history_region,
-                    rotate_credentials=rotate_credentials,
-                    challenge_threshold=challenge_threshold,
                 )
                 if retry_models:
                     batch_models.extend(retry_models)
@@ -1580,30 +1363,18 @@ def crawl_watchcharts(
     batch_size: int = 20,
     resume: bool = False,
     max_pages: int = 100,
-    headless: bool = False,
     concurrency: int = 24,
     timeout: float = 30.0,
     retries: int = 1,
-    use_anticaptcha: bool = True,
-    ac_concurrency: int = 2,
-    ac_timeout: float = 120.0,
-    backend: str = "auto",
+    backend: str = "curl-impersonate",
     impersonate: str = "chrome120",
     retry_rounds: int = 2,
     retry_delay: float = 2.0,
     retry_concurrency: int = 0,
-    rotate_credentials: bool = True,
-    challenge_threshold: float = CHALLENGE_THRESHOLD_DEFAULT,
-    pw_headless: bool = True,
     include_price_history: bool = False,
     price_history_region: Optional[int] = None,
     price_history_only: bool = False,
-    anti_captcha_key: Optional[str] = None,
     proxy_settings: Optional[ProxySettings] = None,
-    brightdata_api_key: Optional[str] = None,
-    brightdata_zone: Optional[str] = None,
-    brightdata_endpoint: str = DEFAULT_BRIGHTDATA_ENDPOINT,
-    brightdata_format: str = DEFAULT_BRIGHTDATA_FORMAT,
     session_cookies: Optional[List[dict]] = None,
 ) -> WatchChartsBrandCatalog:
     return asyncio.run(
@@ -1616,30 +1387,18 @@ def crawl_watchcharts(
             batch_size=batch_size,
             resume=resume,
             max_pages=max_pages,
-            headless=headless,
             concurrency=concurrency,
             timeout=timeout,
             retries=retries,
-            use_anticaptcha=use_anticaptcha,
-            ac_concurrency=ac_concurrency,
-            ac_timeout=ac_timeout,
             backend=backend,
             impersonate=impersonate,
             retry_rounds=retry_rounds,
             retry_delay=retry_delay,
             retry_concurrency=retry_concurrency,
-            rotate_credentials=rotate_credentials,
-            challenge_threshold=challenge_threshold,
-            pw_headless=pw_headless,
             include_price_history=include_price_history,
             price_history_region=price_history_region,
             price_history_only=price_history_only,
-            anti_captcha_key=anti_captcha_key,
             proxy_settings=proxy_settings,
-            brightdata_api_key=brightdata_api_key,
-            brightdata_zone=brightdata_zone,
-            brightdata_endpoint=brightdata_endpoint,
-            brightdata_format=brightdata_format,
             session_cookies=session_cookies,
         )
     )
@@ -1650,31 +1409,19 @@ def retry_failed(
     brand_name: str,
     brand_slug: str,
     base_url: str,
-    headless: bool = False,
     batch_size: int = 20,
     concurrency: int = 24,
     timeout: float = 30.0,
     retries: int = 1,
-    use_anticaptcha: bool = True,
-    ac_concurrency: int = 2,
-    ac_timeout: float = 120.0,
-    backend: str = "auto",
+    backend: str = "curl-impersonate",
     impersonate: str = "chrome120",
     retry_rounds: int = 2,
     retry_delay: float = 2.0,
     retry_concurrency: int = 0,
-    rotate_credentials: bool = True,
-    challenge_threshold: float = CHALLENGE_THRESHOLD_DEFAULT,
-    pw_headless: bool = True,
     include_price_history: bool = False,
     price_history_region: Optional[int] = None,
     price_history_only: bool = False,
-    anti_captcha_key: Optional[str] = None,
     proxy_settings: Optional[ProxySettings] = None,
-    brightdata_api_key: Optional[str] = None,
-    brightdata_zone: Optional[str] = None,
-    brightdata_endpoint: str = DEFAULT_BRIGHTDATA_ENDPOINT,
-    brightdata_format: str = DEFAULT_BRIGHTDATA_FORMAT,
     session_cookies: Optional[List[dict]] = None,
 ) -> None:
     asyncio.run(
@@ -1683,31 +1430,19 @@ def retry_failed(
             brand_name=brand_name,
             brand_slug=brand_slug,
             base_url=base_url,
-            headless=headless,
             batch_size=batch_size,
             concurrency=concurrency,
             timeout=timeout,
             retries=retries,
-            use_anticaptcha=use_anticaptcha,
-            ac_concurrency=ac_concurrency,
-            ac_timeout=ac_timeout,
             backend=backend,
             impersonate=impersonate,
             retry_rounds=retry_rounds,
             retry_delay=retry_delay,
             retry_concurrency=retry_concurrency,
-            rotate_credentials=rotate_credentials,
-            challenge_threshold=challenge_threshold,
-            pw_headless=pw_headless,
             include_price_history=include_price_history,
             price_history_region=price_history_region,
             price_history_only=price_history_only,
-            anti_captcha_key=anti_captcha_key,
             proxy_settings=proxy_settings,
-            brightdata_api_key=brightdata_api_key,
-            brightdata_zone=brightdata_zone,
-            brightdata_endpoint=brightdata_endpoint,
-            brightdata_format=brightdata_format,
             session_cookies=session_cookies,
         )
     )
@@ -1729,25 +1464,14 @@ def main() -> None:
     parser.add_argument("--concurrency", type=int, default=6, help="Max concurrent detail fetches")
     parser.add_argument("--timeout", type=float, default=30.0, help="Request timeout in seconds")
     parser.add_argument("--retries", type=int, default=1, help="Retry count per request")
-    parser.add_argument("--backend", type=str, default="curl-impersonate", help="HTTP backend: curl-impersonate (Docker), brightdata, curl (curl_cffi), httpx")
+    parser.add_argument("--backend", type=str, default="curl-impersonate", help="HTTP backend: curl-impersonate (Docker), curl (curl_cffi), httpx")
     parser.add_argument("--impersonate", type=str, default="chrome120", help="curl_cffi impersonation profile(s), comma-separated")
     parser.add_argument("--retry-rounds", type=int, default=2, help="Recursive retry rounds per batch")
     parser.add_argument("--retry-delay", type=float, default=2.0, help="Base delay between retry rounds in seconds")
     parser.add_argument("--retry-concurrency", type=int, default=0, help="Override concurrency for retry rounds (0 = auto)")
-    parser.add_argument("--challenge-threshold", type=float, default=CHALLENGE_THRESHOLD_DEFAULT, help="Challenge ratio to rotate credentials")
-    parser.add_argument("--no-rotate-credentials", action="store_true", help="Disable credential rotation on challenge spikes")
     parser.add_argument("--env-file", type=str, help="Load env vars from a file (default: .env or WATCHCHARTS_ENV_FILE)")
-    parser.add_argument("--brightdata-api-key", type=str, help="Bright Data Web Access API key (Unlocker)")
-    parser.add_argument("--brightdata-zone", type=str, help="Bright Data Web Unlocker zone name")
-    parser.add_argument("--brightdata-endpoint", type=str, help=f"Bright Data API endpoint (default: {DEFAULT_BRIGHTDATA_ENDPOINT})")
-    parser.add_argument("--brightdata-format", type=str, default=DEFAULT_BRIGHTDATA_FORMAT, help="Bright Data response format (default: raw)")
     parser.add_argument("--cookies-file", type=str, help="Path to Netscape cookies.txt file for session authentication")
     parser.add_argument("--proxy", type=str, help="Proxy URL for HTTP requests (e.g. http://user:pass@host:port)")
-    parser.add_argument("--brightdata-username", type=str, help="Bright Data proxy username (full username from dashboard)")
-    parser.add_argument("--brightdata-password", type=str, help="Bright Data proxy password")
-    parser.add_argument("--brightdata-host", type=str, help="Bright Data proxy host (default: brd.superproxy.io)")
-    parser.add_argument("--brightdata-port", type=int, help="Bright Data proxy port (default: 22225)")
-    parser.add_argument("--brightdata-scheme", type=str, help="Proxy scheme for Bright Data (http or https)")
     args = parser.parse_args()
 
     if load_dotenv:
@@ -1777,19 +1501,6 @@ def main() -> None:
     brand_slug = derive_brand_slug(args.brand_slug, args.brand, entry_url)
     brand_name = derive_brand_name(args.brand, brand_slug)
 
-    brightdata_api_key = (
-        args.brightdata_api_key
-        or os.getenv("BRIGHTDATA_API_KEY")
-        or os.getenv("BRIGHTDATA_WEB_ACCESS_KEY")
-    )
-    brightdata_zone = (
-        args.brightdata_zone
-        or os.getenv("BRIGHTDATA_WEB_ACCESS_ZONE")
-        or os.getenv("BRIGHTDATA_ZONE")
-    )
-    brightdata_endpoint = args.brightdata_endpoint or os.getenv("BRIGHTDATA_ENDPOINT") or DEFAULT_BRIGHTDATA_ENDPOINT
-    brightdata_format = args.brightdata_format or os.getenv("BRIGHTDATA_FORMAT") or DEFAULT_BRIGHTDATA_FORMAT
-
     cookies_file = args.cookies_file or os.getenv("WATCHCHARTS_COOKIES_FILE")
     session_cookies = []
     if cookies_file:
@@ -1800,29 +1511,13 @@ def main() -> None:
             print(f"Warning: cookies file not found: {cookies_file}")
 
     backend_choice = (args.backend or "auto").lower()
-    use_brightdata = backend_choice in {"brightdata", "brightdata-api", "brightdata-webaccess"}
-    if use_brightdata and (not brightdata_api_key or not brightdata_zone):
-        parser.error("Bright Data backend requires --brightdata-api-key and --brightdata-zone")
-
-    proxy_input = None if use_brightdata else (args.proxy or os.getenv("WATCHCHARTS_PROXY"))
+    proxy_input = args.proxy or os.getenv("WATCHCHARTS_PROXY")
     proxy_settings = None
     if proxy_input:
         try:
             proxy_settings = parse_proxy_settings(proxy_input, None)
         except ValueError as exc:
             parser.error(str(exc))
-    elif not use_brightdata:
-        bd_username = args.brightdata_username or os.getenv("BRIGHTDATA_USERNAME")
-        bd_password = args.brightdata_password or os.getenv("BRIGHTDATA_PASSWORD")
-        bd_host = args.brightdata_host or os.getenv("BRIGHTDATA_HOST", "brd.superproxy.io")
-        bd_port = args.brightdata_port or int(os.getenv("BRIGHTDATA_PORT", "22225"))
-        bd_scheme = args.brightdata_scheme or os.getenv("BRIGHTDATA_SCHEME", "http")
-        if bd_username and bd_password:
-            proxy_input = f"{bd_scheme}://{bd_username}:{bd_password}@{bd_host}:{bd_port}"
-            try:
-                proxy_settings = parse_proxy_settings(proxy_input, None)
-            except ValueError as exc:
-                parser.error(str(exc))
     if proxy_settings:
         print(f"Using proxy: {proxy_settings.server}")
 
@@ -1841,13 +1536,7 @@ def main() -> None:
             retry_rounds=args.retry_rounds,
             retry_delay=args.retry_delay,
             retry_concurrency=args.retry_concurrency,
-            rotate_credentials=not args.no_rotate_credentials,
-            challenge_threshold=args.challenge_threshold,
             proxy_settings=proxy_settings,
-            brightdata_api_key=brightdata_api_key,
-            brightdata_zone=brightdata_zone,
-            brightdata_endpoint=brightdata_endpoint,
-            brightdata_format=brightdata_format,
             session_cookies=session_cookies,
         )
     else:
@@ -1868,13 +1557,7 @@ def main() -> None:
             retry_rounds=args.retry_rounds,
             retry_delay=args.retry_delay,
             retry_concurrency=args.retry_concurrency,
-            rotate_credentials=not args.no_rotate_credentials,
-            challenge_threshold=args.challenge_threshold,
             proxy_settings=proxy_settings,
-            brightdata_api_key=brightdata_api_key,
-            brightdata_zone=brightdata_zone,
-            brightdata_endpoint=brightdata_endpoint,
-            brightdata_format=brightdata_format,
             session_cookies=session_cookies,
         )
 
