@@ -50,6 +50,31 @@ python3 -m watchcollection_crawler.pipelines.watchcharts_csv_import --csv-dir ./
 - Unmatched references logged as warnings, import continues
 - Emits run report with inserted/skipped counts
 
+## Backfill Queue Generator
+
+Generate a CSV of watches needing price history backfill:
+
+```bash
+# Generate queue for all brands (watches missing any history)
+python3 -m watchcollection_crawler.pipelines.marketdata_backfill_queue --output ./backfill_queue.csv
+
+# Filter to watches with fewer than 10 snapshots
+python3 -m watchcollection_crawler.pipelines.marketdata_backfill_queue --output ./queue.csv --min-points 10
+
+# Filter to watches with history starting after a date
+python3 -m watchcollection_crawler.pipelines.marketdata_backfill_queue --output ./queue.csv --after-date 2024-01-01
+
+# Filter to specific brand
+python3 -m watchcollection_crawler.pipelines.marketdata_backfill_queue --output ./queue.csv --brand rolex
+```
+
+**CSV output columns:**
+- `watchcharts_id`: UUID for matching with downloaded CSVs
+- `brand_slug`, `reference`, `full_name`: Model identification
+- `watchcharts_url`: URL for manual download from WatchCharts
+- `snapshot_count`: Current DB coverage
+- `earliest_date`, `latest_date`: Date range of existing snapshots
+
 ## Paths and env vars
 Defaults are relative to repo root, but can be overridden:
 - `WATCHCOLLECTION_OUTPUT_DIR`
