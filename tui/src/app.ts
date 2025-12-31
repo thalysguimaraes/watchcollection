@@ -431,7 +431,7 @@ async function runPhase(phase: Phase, brand?: BrandEntry): Promise<boolean> {
       '--brand-slug',
       brand.slug,
       '--backend',
-      'brightdata',
+      'curl-impersonate',
       '--models',
       String(DEFAULT_WATCHCHARTS_MODELS),
     ];

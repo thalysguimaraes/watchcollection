@@ -31,18 +31,13 @@ try:
 except Exception:
     load_dotenv = None
 
-from watchcollection_crawler.core.anticaptcha import AntiCaptchaClient, AntiCaptchaProxy, detect_turnstile
 from watchcollection_crawler.core.curl_impersonate import AsyncCurlImpersonateClient
-from watchcollection_crawler.core.flaresolverr import FlareSolverrClient
 from watchcollection_crawler.core.paths import WATCHCHARTS_OUTPUT_DIR
-from watchcollection_crawler.core.playwright_stealth import PlaywrightStealthClient
 from watchcollection_crawler.schemas_watchcharts import (
     WatchChartsModelDTO,
     WatchChartsBrandCatalog,
     CaseSpecs,
     MovementSpecs,
-    MarketPriceHistory,
-    MarketPriceHistoryPoint,
 )
 from watchcollection_crawler.utils.strings import slugify
 from watchcollection_crawler.reference_matcher import generate_aliases
@@ -93,14 +88,6 @@ REFERENCE_URL_RE = re.compile(r"/watch_model/\d+-[^/]*-(?P<ref>[A-Za-z0-9-]+)(?:
 REF_IN_TITLE_RE = re.compile(r"Ref\.?\s*([A-Za-z0-9.-]+)", re.IGNORECASE)
 RETAIL_PRICE_RE = re.compile(r"Retail Price\s*\$?([\d,]+)")
 MARKET_PRICE_RE = re.compile(r"Market Price\s*\$?([\d,]+)")
-CSRF_TOKEN_RE = re.compile(r'id="csrfToken"[^>]*data-token=["\']([^"\']+)["\']')
-CSRF_WINDOW_RE = re.compile(r'window\.csrf_token\s*=\s*["\']([^"\']+)["\']')
-SYS_CURRENCY_RE = re.compile(r'window\.sys_currency\s*=\s*["\']([^"\']+)["\']')
-
-DEFAULT_PRICE_HISTORY_REGION = 0
-DEFAULT_PRICE_HISTORY_CONDITION_ID = 0
-DEFAULT_PRICE_HISTORY_ACCESSORIES_ID = 1
-DEFAULT_PRICE_HISTORY_SEGMENT_ID = 0
 
 
 def parse_csv(value: Optional[str]) -> List[str]:
@@ -413,50 +400,6 @@ class WatchChartsFetcher:
                     await result
         if self._brightdata_client:
             await self._brightdata_client.aclose()
-        if self._pw:
-            await self._pw.close()
-            self._pw = None
-        if self._fs_client:
-            await asyncio.to_thread(self._fs_client.destroy_session)
-
-    def _ac_disabled(self) -> bool:
-        return self._ac_disable_until and time.monotonic() < self._ac_disable_until
-
-    def _note_ac_failure(self, exc: Exception) -> None:
-        self._ac_failures += 1
-        message = str(exc)
-        if "ERROR_IP_BLOCKED" in message:
-            self._ac_disable_until = time.monotonic() + 1800
-            self._ac_failures = 0
-            print("AntiCaptcha disabled for 30m after ERROR_IP_BLOCKED. Configure a proxy to continue.")
-            return
-        if self._ac_failures >= 3 and not self._ac_disabled():
-            self._ac_disable_until = time.monotonic() + 300
-            self._ac_failures = 0
-            print(f"AntiCaptcha disabled for 5m after repeated failures ({exc}).")
-
-    def _pw_disabled(self) -> bool:
-        return self._pw_disable_until and time.monotonic() < self._pw_disable_until
-
-    def _note_pw_failure(self, exc: Exception) -> None:
-        self._pw_failures += 1
-        if self._pw_failures >= 10 and not self._pw_disabled():
-            self._pw_disable_until = time.monotonic() + 60
-            self._pw_failures = 0
-            print(f"Playwright paused for 1m after repeated failures ({exc}).")
-
-    def _fs_disabled(self) -> bool:
-        return self._fs_disable_until and time.monotonic() < self._fs_disable_until
-
-    def _note_fs_failure(self, exc: Exception) -> None:
-        self._fs_failures += 1
-        if self._fs_failures >= 3 and not self._fs_disabled():
-            self._fs_disable_until = time.monotonic() + 120
-            self._fs_failures = 0
-            print(f"FlareSolverr paused for 2m after repeated failures ({exc}).")
-
-    def _flaresolverr_available(self) -> bool:
-        return self._fs_client is not None and not self._fs_disabled()
 
     def _apply_solution(self, solution: dict) -> None:
         user_agent = solution.get("userAgent")
@@ -589,257 +532,12 @@ class WatchChartsFetcher:
         resp = await self._httpx.get(url, headers=headers)
         return resp.status_code, resp.text
 
-    async def _solve_challenge_with_playwright(self, url: str) -> Optional[dict]:
-        if not self._ac or self._ac_disabled():
-            return None
-
-        async with self._pw_sem:
-            async with self._ac_sem:
-                try:
-                    if not self._pw:
-                        self._pw = PlaywrightStealthClient(
-                            headless=self._pw_headless,
-                            timeout=self._pw_timeout,
-                            anti_captcha_key=self._anti_captcha_key,
-                            anti_captcha_timeout=self._anti_captcha_timeout,
-                            anti_captcha_proxy=self._ac_proxy,
-                            proxy=self._pw_proxy,
-                        )
-                        await self._pw.start()
-
-                    print(f"Navigating to {url} with Playwright...")
-                    html = await self._pw.get(url, wait_for_cf=True, cf_timeout=self._anti_captcha_timeout)
-
-                    if is_challenge_html(html):
-                        print("Challenge still present after wait_for_cf, challenge may have failed")
-                        return None
-
-                    cookies = await self._pw.cookies()
-                    cf_clearance = None
-
-                    for cookie in cookies:
-                        if cookie.get("name") == "cf_clearance":
-                            cf_clearance = cookie
-                            break
-
-                    if cf_clearance:
-                        self._ac_failures = 0
-                        pw_ua = await self._pw.page.evaluate("navigator.userAgent")
-                        print(f"Got cf_clearance cookie: {cf_clearance.get('value', '')[:20]}...")
-                        return {
-                            "cookies": cookies,
-                            "cf_clearance": cf_clearance,
-                            "userAgent": pw_ua,
-                        }
-
-                    print("No cf_clearance cookie found after challenge")
-                    return None
-                except Exception as exc:
-                    self._note_ac_failure(exc)
-                    print(f"Challenge solve failed: {exc}")
-                    return None
-
-    async def _refresh_cookies(self) -> bool:
-        if self._backend == "brightdata":
-            return False
-        if not self._ac_enabled or not self._bootstrap_url or self._ac_disabled():
-            return False
-
-        async with self._refresh_lock:
-            now = time.monotonic()
-            if now - self._last_refresh < self._refresh_min_interval:
-                return True
-
-            print("Refreshing cf_clearance cookie...")
-            solution = await self._solve_challenge_with_playwright(self._bootstrap_url)
-            if solution:
-                self._apply_solution(solution)
-                self._last_refresh = now
-                print("Cookie refreshed successfully")
-                return True
-            print("Cookie refresh failed")
-            return False
-
-    async def rotate_credentials(self, force_new_session: bool = True) -> bool:
-        if self._backend == "brightdata":
-            return False
-        if not self._ac_enabled or not self._bootstrap_url:
-            return False
-        async with self._refresh_lock:
-            if force_new_session and self._pw:
-                await self._pw.close()
-                self._pw = None
-
-            if self._backend == "curl":
-                next_impersonate = self._next_impersonate()
-                if next_impersonate and next_impersonate != self._impersonate:
-                    self._swap_curl_session(next_impersonate)
-
-            solution = await self._solve_challenge_with_playwright(self._bootstrap_url)
-            if solution:
-                self._apply_solution(solution)
-                self._last_refresh = time.monotonic()
-                self._ac_failures = 0
-                return True
-            return False
-
-    async def rotate_impersonate(self) -> bool:
-        if self._backend == "brightdata":
-            return False
-        if self._backend != "curl":
-            return False
-        async with self._refresh_lock:
-            next_impersonate = self._next_impersonate()
-            if not next_impersonate or next_impersonate == self._impersonate:
-                return False
-            self._swap_curl_session(next_impersonate)
-            return True
-
-    async def _solve_and_fetch(self, url: str) -> Optional[str]:
-        if not self._ac or self._ac_disabled():
-            return None
-        try:
-            solution = await self._solve_challenge_with_playwright(url)
-            if solution:
-                self._apply_solution(solution)
-                if self._pw and self._pw.page:
-                    html = await self._pw.page.content()
-                    if html and not is_challenge_html(html):
-                        return html
-
-            status_code, text = await self._get(url)
-            if status_code < 400 and not is_challenge_html(text):
-                return text
-            return None
-        except Exception as exc:
-            self._note_ac_failure(exc)
-            return None
-
-    async def solve_challenge(self, url: str) -> Optional[str]:
-        if not self._ac or self._ac_disabled():
-            return None
-        solution = await self._solve_challenge_with_playwright(url)
-        if solution:
-            self._apply_solution(solution)
-            if self._pw and self._pw.page:
-                html = await self._pw.page.content()
-                self._ac_failures = 0
-                return html
-        return None
-
-    async def _fetch_via_playwright(self, url: str) -> Optional[str]:
-        if self._pw_disabled():
-            return None
-        async with self._pw_sem:
-            try:
-                if not self._pw:
-                    self._pw = PlaywrightStealthClient(
-                        headless=self._pw_headless,
-                        timeout=self._pw_timeout,
-                        anti_captcha_key=self._anti_captcha_key,
-                        anti_captcha_timeout=self._anti_captcha_timeout,
-                        anti_captcha_proxy=self._ac_proxy,
-                        proxy=self._pw_proxy,
-                    )
-                    await self._pw.start()
-                html = await self._pw.get(url, wait_for_cf=True, cf_timeout=self._anti_captcha_timeout)
-                self._pw_failures = 0
-                return html
-            except Exception as exc:
-                self._note_pw_failure(exc)
-                return None
-
-    async def _fetch_via_playwright_text(self, url: str) -> Optional[str]:
-        if self._pw_disabled():
-            return None
-        async with self._pw_sem:
-            try:
-                if not self._pw:
-                    self._pw = PlaywrightStealthClient(
-                        headless=self._pw_headless,
-                        timeout=self._pw_timeout,
-                        anti_captcha_key=self._anti_captcha_key,
-                        anti_captcha_timeout=self._anti_captcha_timeout,
-                        anti_captcha_proxy=self._ac_proxy,
-                        proxy=self._pw_proxy,
-                    )
-                    await self._pw.start()
-                text = await self._pw.get_text(url, wait_for_cf=True, cf_timeout=self._anti_captcha_timeout)
-                self._pw_failures = 0
-                return text
-            except Exception as exc:
-                self._note_pw_failure(exc)
-                return None
-
-    async def _fetch_json_via_playwright(self, url: str, headers: Optional[dict] = None) -> Optional[str]:
-        if self._pw_disabled():
-            return None
-        if not self._pw or not self._pw._page:
-            return None
-        async with self._pw_sem:
-            try:
-                header_obj = json.dumps(headers) if headers else "{}"
-                result = await self._pw._page.evaluate(
-                    f"""
-                    async () => {{
-                        const resp = await fetch("{url}", {{
-                            method: "GET",
-                            headers: {header_obj},
-                            credentials: "same-origin"
-                        }});
-                        return await resp.text();
-                    }}
-                    """
-                )
-                self._pw_failures = 0
-                return result
-            except Exception as exc:
-                self._note_pw_failure(exc)
-                return None
-
-    async def _ensure_flaresolverr_session(self) -> bool:
-        if not self._flaresolverr_available():
-            return False
-        async with self._fs_lock:
-            if self._fs_client and self._fs_client.session_id:
-                return True
-            try:
-                await asyncio.to_thread(self._fs_client.create_session)
-                return True
-            except Exception as exc:
-                self._note_fs_failure(exc)
-                return False
-
-    async def _fetch_via_flaresolverr(
-        self,
-        url: str,
-        headers: Optional[dict] = None,
-        max_timeout: int = 60000,
-    ) -> Optional[str]:
-        if not self._flaresolverr_available():
-            return None
-        async with self._fs_sem:
-            ready = await self._ensure_flaresolverr_session()
-            if not ready or not self._fs_client:
-                return None
-            try:
-                text = await asyncio.to_thread(self._fs_client.get, url, max_timeout, headers)
-                self._fs_failures = 0
-                return text
-            except Exception as exc:
-                self._note_fs_failure(exc)
-                return None
-
     async def fetch(
         self,
         url: str,
-        allow_fallback: bool = True,
         session_id: Optional[str] = None,
     ) -> str:
         last_error: Optional[Exception] = None
-        challenge_count = 0
-        if self._backend == "brightdata":
-            allow_fallback = False
 
         for attempt in range(self.retries + 1):
             try:
@@ -848,7 +546,6 @@ class WatchChartsFetcher:
                     return text
                 if is_challenge_html(text):
                     last_error = RuntimeError("Cloudflare challenge")
-                    challenge_count += 1
                 else:
                     last_error = RuntimeError(f"HTTP {status_code}")
             except Exception as exc:
@@ -857,53 +554,27 @@ class WatchChartsFetcher:
             if attempt < self.retries:
                 await asyncio.sleep(0.5 * (2**attempt))
 
-        if allow_fallback and challenge_count > 0:
-            html = await self._fetch_via_playwright(url)
-            if html and not is_challenge_html(html):
-                return html
-
         raise RuntimeError(f"Failed after {self.retries + 1} attempts: {last_error}")
 
     async def fetch_with_headers(
         self,
         url: str,
         headers: Optional[dict] = None,
-        allow_fallback: bool = True,
         session_id: Optional[str] = None,
     ) -> str:
         last_error: Optional[Exception] = None
-        if self._backend == "brightdata":
-            allow_fallback = False
+
         for attempt in range(self.retries + 1):
-            needs_refresh = False
             try:
                 status_code, text = await self._get_with_headers(url, headers, session_id=session_id)
                 if status_code < 400 and not is_challenge_html(text):
                     return text
                 if is_challenge_html(text):
                     last_error = RuntimeError("Cloudflare challenge")
-                    needs_refresh = True
                 else:
                     last_error = RuntimeError(f"HTTP {status_code}")
-                    if status_code in {403, 429, 503}:
-                        needs_refresh = True
             except Exception as exc:
                 last_error = exc
-                needs_refresh = True
-
-            if allow_fallback and self._ac_enabled and needs_refresh:
-                refreshed = await self._refresh_cookies()
-                if refreshed:
-                    try:
-                        status_code, text = await self._get_with_headers(url, headers)
-                        if status_code < 400 and not is_challenge_html(text):
-                            return text
-                        if is_challenge_html(text):
-                            last_error = RuntimeError("Cloudflare challenge")
-                        else:
-                            last_error = RuntimeError(f"HTTP {status_code}")
-                    except Exception as exc:
-                        last_error = exc
 
             if attempt < self.retries:
                 await asyncio.sleep(1.0 * (2**attempt))
@@ -1034,779 +705,12 @@ def safe_int(value: Optional[str], default: Optional[int] = None) -> Optional[in
         return default
 
 
-def has_price_history(model: WatchChartsModelDTO) -> bool:
-    history = model.market_price_history
-    if not history:
-        return False
-    points = getattr(history, "points", None)
-    if points is None and isinstance(history, dict):
-        points = history.get("points")
-    return bool(points)
-
-
 def derive_base_url_from_full_url(full_url: str, fallback: str) -> str:
     parsed = urlparse(full_url)
     if parsed.scheme and parsed.netloc:
         return f"{parsed.scheme}://{parsed.netloc}"
     return fallback
 
-
-def extract_csrf_token(soup: BeautifulSoup, html: str) -> Optional[str]:
-    token_elem = soup.select_one("#csrfToken")
-    if token_elem:
-        token = token_elem.get("data-token")
-        if token:
-            return token
-    match = CSRF_TOKEN_RE.search(html)
-    if match:
-        return match.group(1)
-    match = CSRF_WINDOW_RE.search(html)
-    return match.group(1) if match else None
-
-
-def extract_sys_currency(html: str) -> Optional[str]:
-    match = SYS_CURRENCY_RE.search(html)
-    return match.group(1) if match else None
-
-
-def extract_price_history_context(soup: BeautifulSoup) -> tuple[int, int]:
-    container = soup.select_one("#priceHistoryChartTabContent")
-    if not container:
-        return DEFAULT_PRICE_HISTORY_REGION, 0
-    region = safe_int(container.get("data-default-region"), DEFAULT_PRICE_HISTORY_REGION)
-    variation = safe_int(container.get("data-variation-id"), 0)
-    return region, variation
-
-
-def build_appraisal_key(
-    region_id: int,
-    condition_id: int = DEFAULT_PRICE_HISTORY_CONDITION_ID,
-    accessories_id: int = DEFAULT_PRICE_HISTORY_ACCESSORIES_ID,
-    segment_id: int = DEFAULT_PRICE_HISTORY_SEGMENT_ID,
-) -> str:
-    return f"{condition_id}{accessories_id}{region_id}{segment_id}"
-
-
-def build_chart_headers(csrf_token: str, referer: str) -> dict:
-    return {
-        "X-CSRF-Token": csrf_token,
-        "X-Requested-With": "XMLHttpRequest",
-        "Referer": referer,
-        "Accept": "application/json, text/javascript, */*; q=0.01",
-    }
-
-
-def coerce_float(value: Optional[float]) -> Optional[float]:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def get_series_value(series: dict, ts: int) -> Optional[float]:
-    if not series:
-        return None
-    if ts in series:
-        return series.get(ts)
-    return series.get(str(ts))
-
-
-def parse_price_history_payload(
-    payload: dict,
-    region_id: int,
-    variation_id: int,
-    key: str,
-    currency: Optional[str],
-) -> Optional[MarketPriceHistory]:
-    data = payload.get("data")
-    if not isinstance(data, dict):
-        return None
-
-    all_series = data.get("all") if isinstance(data.get("all"), dict) else {}
-    min_series = data.get("min") if isinstance(data.get("min"), dict) else {}
-    max_series = data.get("max") if isinstance(data.get("max"), dict) else {}
-
-    if not any((all_series, min_series, max_series)):
-        return None
-
-    raw_keys = list(all_series.keys()) + list(min_series.keys()) + list(max_series.keys())
-    timestamps = []
-    for ts in raw_keys:
-        ts_int = safe_int(ts)
-        if ts_int is not None:
-            timestamps.append(ts_int)
-    timestamps = sorted(set(timestamps))
-    points = []
-    for ts in timestamps:
-        points.append(MarketPriceHistoryPoint(
-            timestamp=ts,
-            price=coerce_float(get_series_value(all_series, ts)),
-            min_price=coerce_float(get_series_value(min_series, ts)),
-            max_price=coerce_float(get_series_value(max_series, ts)),
-        ))
-
-    return MarketPriceHistory(
-        region_id=region_id,
-        variation_id=variation_id,
-        key=key,
-        currency=currency,
-        points=points,
-        max_time=safe_int(payload.get("max_time")),
-        chart_id=payload.get("chart_id"),
-    )
-
-
-def decode_json_response(text: str) -> Optional[dict]:
-    if not text:
-        return None
-    raw = text.strip()
-    if raw.startswith("<"):
-        try:
-            raw = BeautifulSoup(raw, "html.parser").get_text().strip()
-        except Exception:
-            pass
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return None
-
-
-async def fetch_price_history_for_model(
-    model: WatchChartsModelDTO,
-    fetcher: WatchChartsFetcher,
-    base_url: str,
-    region_id: Optional[int],
-) -> Optional[MarketPriceHistory]:
-    full_url = model.watchcharts_url
-    if not full_url:
-        return None
-    session_id: Optional[str] = None
-    if fetcher._backend == "brightdata":
-        session_id = str(uuid.uuid4().int % 1_000_000_000)
-
-    try:
-        html = await fetcher.fetch(full_url, allow_fallback=True, session_id=session_id)
-    except Exception as exc:
-        if fetcher._ac:
-            html = await fetcher.solve_challenge(full_url)
-            if not html or is_challenge_html(html):
-                raise exc
-        else:
-            raise exc
-    soup = make_soup(html)
-    chart_base = derive_base_url_from_full_url(full_url, base_url)
-
-    return await fetch_price_history(
-        html=html,
-        soup=soup,
-        full_url=full_url,
-        watch_id=model.watchcharts_id,
-        base_url=chart_base,
-        fetcher=fetcher,
-        region_id=region_id,
-        session_id=session_id,
-    )
-
-
-def extract_id_from_url(url: str) -> str:
-    match = WATCH_MODEL_ID_RE.search(url)
-    return match.group(1) if match else url
-
-
-def normalize_text(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def extract_reference_from_specs(soup: BeautifulSoup) -> Optional[str]:
-    for label in soup.select("table.spec-table td"):
-        label_text = normalize_text(label.get_text(" ", strip=True)).lower()
-        if label_text in {"reference", "reference(s)"}:
-            value_td = label.find_next_sibling("td")
-            if value_td:
-                value_text = normalize_text(value_td.get_text(" ", strip=True))
-                if value_text:
-                    return value_text.split(",")[0].strip()
-    return None
-
-
-def extract_reference_from_url(detail_url: str) -> Optional[str]:
-    match = REFERENCE_URL_RE.search(detail_url)
-    return match.group("ref") if match else None
-
-
-def is_valid_reference(reference: str) -> bool:
-    if not reference:
-        return False
-    lower = reference.lower()
-    if "watchcharts" in lower or is_challenge_html(lower):
-        return False
-    return True
-
-
-def extract_reference(soup: BeautifulSoup, detail_url: str) -> str:
-    h1 = soup.select_one("h1")
-    if h1:
-        span = h1.select_one("span")
-        if span:
-            span_text = normalize_text(span.get_text(" ", strip=True))
-            if is_valid_reference(span_text):
-                return span_text
-
-        h1_text = normalize_text(h1.get_text(" ", strip=True))
-        ref_match = REF_IN_TITLE_RE.search(h1_text)
-        if ref_match and is_valid_reference(ref_match.group(1)):
-            return ref_match.group(1)
-
-        if h1_text and "ref" not in h1_text.lower() and len(h1_text) <= 24 and is_valid_reference(h1_text):
-            return h1_text
-
-    spec_reference = extract_reference_from_specs(soup)
-    if spec_reference and is_valid_reference(spec_reference):
-        return spec_reference
-
-    url_reference = extract_reference_from_url(detail_url)
-    return url_reference or ""
-
-
-def clean_title_text(text: str) -> str:
-    text = normalize_text(text)
-    text = text.replace("| WatchCharts", "").strip()
-    text = re.sub(r"\s+Price\s+as\s+of.*$", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\s+Price.*$", "", text, flags=re.IGNORECASE)
-    return text
-
-
-def extract_full_name(soup: BeautifulSoup) -> str:
-    h2 = soup.select_one("h2.h4.font-weight-bolder, h2.font-weight-bolder")
-    if h2:
-        text = normalize_text(h2.get_text(" ", strip=True))
-        if text and not is_challenge_html(text):
-            return text
-
-    og_title = soup.find("meta", attrs={"property": "og:title"})
-    if og_title and og_title.get("content"):
-        text = clean_title_text(og_title["content"])
-        if not is_challenge_html(text):
-            return text
-
-    if soup.title:
-        text = clean_title_text(soup.title.get_text(" ", strip=True))
-        if not is_challenge_html(text):
-            return text
-
-    return ""
-
-
-def extract_is_current(soup: BeautifulSoup) -> Optional[bool]:
-    containers = []
-    overview = soup.select_one("#scrollspyOverview")
-    if overview:
-        containers.append(overview)
-    containers.append(soup)
-
-    for container in containers:
-        for badge in container.select("span.badge"):
-            badge_text = normalize_text(badge.get_text(" ", strip=True)).lower()
-            tooltip_text = normalize_text(badge.get("data-bs-original-title", "")).lower()
-            combined = f"{badge_text} {tooltip_text}".strip()
-
-            if "current production" in combined or "in production" in combined:
-                return True
-            if "discontinued" in combined or "not in production" in combined or "out of production" in combined:
-                return False
-
-    return None
-
-
-def extract_spec_table(soup: BeautifulSoup) -> dict:
-    specs = {
-        "case": {},
-        "movement": {},
-        "complications": [],
-        "features": [],
-        "style": None,
-    }
-
-    case_fields = {
-        "case diameter": ("diameter_mm", parse_mm),
-        "case thickness": ("thickness_mm", parse_mm),
-        "case material": ("material", str),
-        "bezel material": ("bezel_material", str),
-        "crystal": ("crystal", str),
-        "water resistance": ("water_resistance_m", parse_water_resistance),
-        "lug width": ("lug_width_mm", parse_mm),
-        "dial color": ("dial_color", str),
-        "dial numerals": ("dial_numerals", str),
-    }
-
-    movement_fields = {
-        "movement type": ("type", str),
-        "movement caliber": ("caliber", str),
-        "power reserve": ("power_reserve_hours", parse_hours),
-        "frequency": ("frequency_bph", parse_bph),
-        "number of jewels": ("jewels_count", parse_int),
-    }
-
-    selectors = [
-        "table.spec-table tr",
-        "#specificationModal table tr",
-        "#scrollspyOverview table tr",
-        ".specifications table tr",
-    ]
-
-    rows = []
-    for selector in selectors:
-        rows.extend(soup.select(selector))
-
-    for row in rows:
-        tds = row.select("td")
-        if len(tds) != 2:
-            continue
-
-        label = normalize_text(tds[0].get_text()).lower()
-        value_td = tds[1]
-        value = normalize_text(value_td.get_text())
-
-        if not value or value.lower() in ("n/a", "-", ""):
-            continue
-
-        if label == "complications":
-            links = value_td.select("a")
-            if links:
-                specs["complications"] = [normalize_text(a.get_text()) for a in links if a.get_text(strip=True)]
-            elif value:
-                specs["complications"] = [v.strip() for v in value.split(",") if v.strip()]
-        elif label == "features":
-            links = value_td.select("a")
-            if links:
-                specs["features"] = [normalize_text(a.get_text()) for a in links if a.get_text(strip=True)]
-            elif value:
-                specs["features"] = [v.strip() for v in value.split(",") if v.strip()]
-        elif label == "style":
-            link = value_td.select_one("a")
-            specs["style"] = normalize_text(link.get_text()) if link else value
-        elif label in case_fields:
-            field, parser = case_fields[label]
-            parsed = parser(value) if parser != str else value
-            if parsed:
-                specs["case"][field] = parsed
-        elif label in movement_fields:
-            field, parser = movement_fields[label]
-            parsed = parser(value) if parser != str else value
-            if parsed:
-                specs["movement"][field] = parsed
-
-    return specs
-
-
-def make_soup(html: str) -> BeautifulSoup:
-    try:
-        return BeautifulSoup(html, HTML_PARSER)
-    except FeatureNotFound:
-        return BeautifulSoup(html, "html.parser")
-
-
-def parse_listing_html(html: str) -> List[dict]:
-    soup = make_soup(html)
-
-    cards = soup.select("div.col-md-6.col-lg-4")
-    print(f"Found {len(cards)} watch cards")
-
-    watches = []
-    for card in cards:
-        link = card.select_one('a[href*="/watch_model/"]')
-        if not link:
-            continue
-
-        href = link.get("href", "")
-        if not href:
-            continue
-
-        img = card.select_one("img.card-img-top")
-        image_url = img.get("src") if img else None
-
-        card_text = card.get_text(separator=" ", strip=True)
-        case_diameter = parse_mm(card_text)
-        is_current = None
-        if "In Production" in card_text:
-            is_current = True
-        elif "Discontinued" in card_text or "Out of Production" in card_text:
-            is_current = False
-
-        retail_match = RETAIL_PRICE_RE.search(card_text)
-        retail_price = int(retail_match.group(1).replace(",", "")) if retail_match else None
-
-        market_match = MARKET_PRICE_RE.search(card_text)
-        market_price = int(market_match.group(1).replace(",", "")) if market_match else None
-
-        name_elem = card.select_one("h4")
-        full_name = normalize_text(name_elem.get_text(" ", strip=True)) if name_elem else ""
-        if not full_name:
-            full_name = normalize_text(link.get_text(" ", strip=True)) if link else ""
-
-        collection_elem = card.select_one("h5")
-        collection = normalize_text(collection_elem.get_text(" ", strip=True)) if collection_elem else ""
-
-        watches.append({
-            "detail_url": href,
-            "watchcharts_id": extract_id_from_url(href),
-            "full_name": full_name,
-            "collection": collection,
-            "image_url": image_url,
-            "case_diameter_mm": case_diameter,
-            "is_current": is_current,
-            "retail_price_usd": retail_price,
-            "market_price_usd": market_price,
-        })
-
-    return watches
-
-
-def parse_detail_soup(soup: BeautifulSoup, full_url: str) -> dict:
-    full_name = extract_full_name(soup)
-    reference = extract_reference(soup, full_url)
-
-    breadcrumb = soup.select_one('nav[aria-label="breadcrumb"]')
-    collection = ""
-    if breadcrumb:
-        links = breadcrumb.select("a")
-        if len(links) >= 2:
-            collection = links[-1].get_text(strip=True)
-
-    is_current = extract_is_current(soup)
-
-    retail_price = None
-    market_price = None
-
-    market_elem = soup.select_one(".market-price")
-    if market_elem:
-        market_price = parse_price(market_elem.get_text())
-
-    if not market_price:
-        for elem in soup.select("div.h1.market-price, div.h2.market-price"):
-            price = parse_price(elem.get_text())
-            if price:
-                market_price = price
-                break
-
-    retail_label = soup.find(string=re.compile(r"Retail Price"))
-    if retail_label:
-        parent = retail_label.find_parent("div", class_=True)
-        if parent:
-            grand = parent.find_parent("div", class_=True)
-            search_containers = [parent, grand] if grand else [parent]
-            for container in search_containers:
-                if not container:
-                    continue
-                for selector in [".h2.text-secondary", ".h3.text-secondary", ".h2.font-weight-bolder", ".h3.font-weight-bolder"]:
-                    price_elem = container.select_one(selector)
-                    if price_elem:
-                        retail_price = parse_price(price_elem.get_text())
-                        if retail_price:
-                            break
-                if retail_price:
-                    break
-
-    if not retail_price:
-        for card in soup.select(".market-price-card, .card"):
-            label = card.find(string=re.compile(r"Retail", re.I))
-            if label:
-                for selector in [".h5", ".h4", ".h3", ".h2"]:
-                    elem = card.select_one(selector)
-                    if elem:
-                        price = parse_price(elem.get_text())
-                        if price:
-                            retail_price = price
-                            break
-                if retail_price:
-                    break
-
-    image_url = None
-
-    og_img = soup.find("meta", attrs={"property": "og:image"})
-    if og_img and og_img.get("content"):
-        content = og_img["content"]
-        if "cdn.watchcharts.com" in content and "/logo/" not in content:
-            image_url = content.split("?")[0]
-
-    if not image_url:
-        featherlight = soup.select_one('a[data-featherlight="image"]')
-        if featherlight and featherlight.get("href"):
-            href = featherlight["href"]
-            if "cdn.watchcharts.com" in href and "/logo/" not in href:
-                image_url = href
-
-    if not image_url:
-        for img in soup.select("img.img-fluid"):
-            src = img.get("src", "")
-            if "cdn.watchcharts.com" in src and "/logo/" not in src and "/removebg/" in src:
-                image_url = src.split("?")[0]
-                break
-
-    specs = extract_spec_table(soup)
-
-    return {
-        "full_name": full_name,
-        "reference": reference,
-        "collection": collection,
-        "is_current": is_current,
-        "retail_price_usd": retail_price,
-        "market_price_usd": market_price,
-        "image_url": image_url,
-        "watchcharts_url": full_url,
-        "case": specs.get("case") or None,
-        "movement": specs.get("movement") or None,
-        "complications": specs.get("complications", []),
-        "features": specs.get("features", []),
-        "style": specs.get("style"),
-    }
-
-
-def parse_detail_html(html: str, full_url: str) -> dict:
-    soup = make_soup(html)
-    return parse_detail_soup(soup, full_url)
-
-
-async def fetch_price_history(
-    html: str,
-    soup: BeautifulSoup,
-    full_url: str,
-    watch_id: str,
-    base_url: str,
-    fetcher: WatchChartsFetcher,
-    region_id: Optional[int] = None,
-    session_id: Optional[str] = None,
-) -> Optional[MarketPriceHistory]:
-    async def fetch_via_flaresolverr() -> Optional[MarketPriceHistory]:
-        if not fetcher._flaresolverr_available():
-            return None
-        fs_html = await fetcher._fetch_via_flaresolverr(full_url)
-        if not fs_html or is_challenge_html(fs_html):
-            return None
-        fs_soup = make_soup(fs_html)
-        fs_csrf = extract_csrf_token(fs_soup, fs_html)
-        if not fs_csrf:
-            return None
-        fs_default_region, fs_variation_id = extract_price_history_context(fs_soup)
-        fs_region = region_id if region_id is not None else fs_default_region
-        fs_key = build_appraisal_key(fs_region)
-        fs_chart_url = (
-            f"{base_url}/charts/watch/{watch_id}.json?type=trend&key={fs_key}"
-            f"&variation_id={fs_variation_id}&mobile=0"
-        )
-        fs_headers = build_chart_headers(fs_csrf, full_url)
-        fs_text = await fetcher._fetch_via_flaresolverr(fs_chart_url, headers=fs_headers)
-        if not fs_text:
-            return None
-        fs_payload = decode_json_response(fs_text)
-        if not fs_payload:
-            return None
-        fs_currency = extract_sys_currency(fs_html)
-        return parse_price_history_payload(
-            payload=fs_payload,
-            region_id=fs_region,
-            variation_id=fs_variation_id,
-            key=fs_key,
-            currency=fs_currency,
-        )
-
-    if not soup.select_one("#priceHistoryChartTabContent"):
-        return None
-
-    csrf_token = extract_csrf_token(soup, html)
-    if not csrf_token:
-        return None
-
-    default_region, variation_id = extract_price_history_context(soup)
-    if region_id is None:
-        region_id = default_region
-
-    key = build_appraisal_key(region_id)
-    chart_url = f"{base_url}/charts/watch/{watch_id}.json?type=trend&key={key}&variation_id={variation_id}&mobile=0"
-    headers = build_chart_headers(csrf_token, full_url)
-    attempted_flaresolverr = False
-
-    try:
-        text = await fetcher.fetch_with_headers(
-            chart_url,
-            headers=headers,
-            allow_fallback=True,
-            session_id=session_id,
-        )
-    except Exception as exc:
-        history = await fetch_via_flaresolverr()
-        attempted_flaresolverr = True
-        if history:
-            print(f"[{watch_id}] price history via flaresolverr")
-            return history
-
-        if fetcher._backend in {"brightdata", "curl-impersonate"}:
-            pw_html = await fetcher._fetch_via_playwright_text(full_url)
-            if pw_html:
-                pw_soup = make_soup(pw_html)
-                pw_csrf = extract_csrf_token(pw_soup, pw_html)
-                if pw_csrf:
-                    pw_region, pw_var_id = extract_price_history_context(pw_soup)
-                    effective_region = region_id if region_id is not None else pw_region
-                    pw_key = build_appraisal_key(effective_region)
-                    pw_chart_url = (
-                        f"{base_url}/charts/watch/{watch_id}.json?type=trend&key={pw_key}"
-                        f"&variation_id={pw_var_id}&mobile=0"
-                    )
-                    pw_headers = build_chart_headers(pw_csrf, full_url)
-                    pw_text = await fetcher._fetch_json_via_playwright(pw_chart_url, pw_headers)
-                    if pw_text:
-                        text = pw_text
-                        print(f"[{watch_id}] price history via playwright")
-                    else:
-                        print(f"[{watch_id}] price history fetch failed: {exc}")
-                        return None
-                else:
-                    print(f"[{watch_id}] price history fetch failed: no csrf token via playwright")
-                    return None
-            else:
-                print(f"[{watch_id}] price history fetch failed: {exc}")
-                return None
-        elif fetcher._ac:
-            refreshed = await fetcher.solve_challenge(full_url)
-            if refreshed:
-                try:
-                    text = await fetcher.fetch_with_headers(
-                        chart_url,
-                        headers=headers,
-                        allow_fallback=True,
-                        session_id=session_id,
-                    )
-                except Exception as retry_exc:
-                    print(f"[{watch_id}] price history fetch failed: {retry_exc}")
-                    return None
-            else:
-                print(f"[{watch_id}] price history fetch failed: {exc}")
-                return None
-        else:
-            print(f"[{watch_id}] price history fetch failed: {exc}")
-            return None
-
-    payload = decode_json_response(text)
-    if not payload:
-        if not attempted_flaresolverr:
-            history = await fetch_via_flaresolverr()
-            attempted_flaresolverr = True
-            if history:
-                print(f"[{watch_id}] price history via flaresolverr")
-                return history
-        print(f"[{watch_id}] price history invalid JSON")
-        return None
-
-    currency = extract_sys_currency(html)
-    history = parse_price_history_payload(
-        payload=payload,
-        region_id=region_id,
-        variation_id=variation_id,
-        key=key,
-        currency=currency,
-    )
-    if history and history.points:
-        return history
-
-    if not attempted_flaresolverr:
-        error_message = None
-        if isinstance(payload, dict):
-            error_message = payload.get("message") or payload.get("error")
-        history = await fetch_via_flaresolverr()
-        attempted_flaresolverr = True
-        if history:
-            print(f"[{watch_id}] price history via flaresolverr")
-            return history
-        if error_message:
-            return None
-
-    return history if history and history.points else None
-
-
-async def fetch_price_history_task(
-    model: WatchChartsModelDTO,
-    idx: int,
-    total: int,
-    fetcher: WatchChartsFetcher,
-    sem: asyncio.Semaphore,
-    base_url: str,
-    region_id: Optional[int],
-) -> tuple:
-    async with sem:
-        try:
-            history = await fetch_price_history_for_model(
-                model=model,
-                fetcher=fetcher,
-                base_url=base_url,
-                region_id=region_id,
-            )
-            if not history or not history.points:
-                return "empty", idx, model, None, "no_history"
-            return "ok", idx, model, history, None
-        except Exception as exc:
-            reason = str(exc)
-            if not reason:
-                reason = f"{type(exc).__name__}"
-            return "error", idx, model, None, reason
-
-
-async def process_price_history_batch(
-    batch_models: List[WatchChartsModelDTO],
-    batch_start: int,
-    total: int,
-    fetcher: WatchChartsFetcher,
-    concurrency: int,
-    base_url: str,
-    region_id: Optional[int],
-    index_map: Optional[dict] = None,
-) -> tuple[int, List[dict]]:
-    sem = asyncio.Semaphore(max(1, concurrency))
-    tasks = []
-
-    for i, model in enumerate(batch_models):
-        idx = batch_start + i
-        if index_map:
-            idx = index_map.get(model.watchcharts_id, idx)
-        tasks.append(
-            asyncio.create_task(
-                fetch_price_history_task(
-                    model=model,
-                    idx=idx,
-                    total=total,
-                    fetcher=fetcher,
-                    sem=sem,
-                    base_url=base_url,
-                    region_id=region_id,
-                )
-            )
-        )
-
-    updated = 0
-    failed = []
-
-    for task in asyncio.as_completed(tasks):
-        status, idx, model, history, reason = await task
-        if status == "ok":
-            model.market_price_history = history
-            updated += 1
-            print(f"[{idx + 1}/{total}] HISTORY OK - {model.reference}")
-        elif status == "empty":
-            failed.append({
-                "watchcharts_id": model.watchcharts_id,
-                "reason": reason,
-            })
-            print(f"[{idx + 1}/{total}] HISTORY EMPTY")
-        else:
-            failed.append({
-                "watchcharts_id": model.watchcharts_id,
-                "reason": reason,
-            })
-            print(f"[{idx + 1}/{total}] HISTORY ERROR - {reason}")
-
-    return updated, failed
 
 
 def default_detail_payload(full_url: str) -> dict:
@@ -1817,7 +721,6 @@ def default_detail_payload(full_url: str) -> dict:
         "is_current": None,
         "retail_price_usd": None,
         "market_price_usd": None,
-        "market_price_history": None,
         "image_url": None,
         "watchcharts_url": full_url,
         "case": None,
@@ -2826,29 +1729,20 @@ def main() -> None:
     parser.add_argument("--concurrency", type=int, default=6, help="Max concurrent detail fetches")
     parser.add_argument("--timeout", type=float, default=30.0, help="Request timeout in seconds")
     parser.add_argument("--retries", type=int, default=1, help="Retry count per request")
-    parser.add_argument("--backend", type=str, default="brightdata", help="HTTP backend: curl-impersonate (Docker), brightdata, curl (curl_cffi), httpx")
+    parser.add_argument("--backend", type=str, default="curl-impersonate", help="HTTP backend: curl-impersonate (Docker), brightdata, curl (curl_cffi), httpx")
     parser.add_argument("--impersonate", type=str, default="chrome120", help="curl_cffi impersonation profile(s), comma-separated")
     parser.add_argument("--retry-rounds", type=int, default=2, help="Recursive retry rounds per batch")
     parser.add_argument("--retry-delay", type=float, default=2.0, help="Base delay between retry rounds in seconds")
     parser.add_argument("--retry-concurrency", type=int, default=0, help="Override concurrency for retry rounds (0 = auto)")
     parser.add_argument("--challenge-threshold", type=float, default=CHALLENGE_THRESHOLD_DEFAULT, help="Challenge ratio to rotate credentials")
     parser.add_argument("--no-rotate-credentials", action="store_true", help="Disable credential rotation on challenge spikes")
-    parser.add_argument("--no-anticaptcha", action="store_true", help="Disable anti-captcha.com Cloudflare solving")
-    parser.add_argument("--ac-concurrency", type=int, default=2, help="Max concurrent anti-captcha solves")
-    parser.add_argument("--ac-timeout", type=float, default=120.0, help="Anti-captcha solve timeout in seconds")
-    parser.add_argument("--no-pw-headless", action="store_true", help="Show browser window (debug mode)")
-    parser.add_argument("--price-history", action="store_true", help="Fetch market price history chart data")
-    parser.add_argument("--price-history-region", type=int, default=None, help="Region id for price history (0 = Global)")
-    parser.add_argument("--price-history-only", action="store_true", help="Update only models missing price history in existing output file")
-    parser.add_argument("--anti-captcha-key", type=str, help="Anti-captcha API key (prefer ANTICAPTCHA_API_KEY env var)")
     parser.add_argument("--env-file", type=str, help="Load env vars from a file (default: .env or WATCHCHARTS_ENV_FILE)")
     parser.add_argument("--brightdata-api-key", type=str, help="Bright Data Web Access API key (Unlocker)")
     parser.add_argument("--brightdata-zone", type=str, help="Bright Data Web Unlocker zone name")
     parser.add_argument("--brightdata-endpoint", type=str, help=f"Bright Data API endpoint (default: {DEFAULT_BRIGHTDATA_ENDPOINT})")
     parser.add_argument("--brightdata-format", type=str, default=DEFAULT_BRIGHTDATA_FORMAT, help="Bright Data response format (default: raw)")
     parser.add_argument("--cookies-file", type=str, help="Path to Netscape cookies.txt file for session authentication")
-    parser.add_argument("--proxy", type=str, help="Proxy URL for HTTP/Playwright/anti-captcha (e.g. http://user:pass@host:port)")
-    parser.add_argument("--proxy-type", type=str, help="Proxy type for anti-captcha (http, https, socks4, socks5)")
+    parser.add_argument("--proxy", type=str, help="Proxy URL for HTTP requests (e.g. http://user:pass@host:port)")
     parser.add_argument("--brightdata-username", type=str, help="Bright Data proxy username (full username from dashboard)")
     parser.add_argument("--brightdata-password", type=str, help="Bright Data proxy password")
     parser.add_argument("--brightdata-host", type=str, help="Bright Data proxy host (default: brd.superproxy.io)")
@@ -2874,7 +1768,7 @@ def main() -> None:
             if candidate_slug and candidate_slug in BRAND_FILTERS:
                 entry_url = f"{base_url}/watches?filters={BRAND_FILTERS[candidate_slug]}"
 
-    if not entry_url and not args.retry_failed and not args.price_history_only:
+    if not entry_url and not args.retry_failed:
         parser.error("Provide --entry-url or --filters (or a brand with known filters).")
     if not entry_url:
         entry_url = base_url
@@ -2882,16 +1776,6 @@ def main() -> None:
 
     brand_slug = derive_brand_slug(args.brand_slug, args.brand, entry_url)
     brand_name = derive_brand_name(args.brand, brand_slug)
-
-    if args.price_history_only:
-        args.price_history = True
-        if args.concurrency > 2:
-            args.concurrency = 2
-        if args.retries < 2:
-            args.retries = 2
-        if args.timeout < 60:
-            args.timeout = 60
-        print(f"Price history only tuning: concurrency={args.concurrency} retries={args.retries} timeout={args.timeout}")
 
     brightdata_api_key = (
         args.brightdata_api_key
@@ -2920,24 +1804,11 @@ def main() -> None:
     if use_brightdata and (not brightdata_api_key or not brightdata_zone):
         parser.error("Bright Data backend requires --brightdata-api-key and --brightdata-zone")
 
-    anti_captcha_key = args.anti_captcha_key or os.getenv("ANTICAPTCHA_API_KEY")
-    use_anticaptcha = not args.no_anticaptcha and bool(anti_captcha_key)
-    if use_brightdata:
-        use_anticaptcha = False
-    if (
-        not args.no_anticaptcha
-        and not anti_captcha_key
-        and not use_brightdata
-    ):
-        print("Warning: ANTICAPTCHA_API_KEY not set, Cloudflare solving disabled")
-        print("Set env var or use --anti-captcha-key to enable")
-
     proxy_input = None if use_brightdata else (args.proxy or os.getenv("WATCHCHARTS_PROXY"))
-    proxy_type = args.proxy_type or os.getenv("WATCHCHARTS_PROXY_TYPE")
     proxy_settings = None
     if proxy_input:
         try:
-            proxy_settings = parse_proxy_settings(proxy_input, proxy_type)
+            proxy_settings = parse_proxy_settings(proxy_input, None)
         except ValueError as exc:
             parser.error(str(exc))
     elif not use_brightdata:
@@ -2949,13 +1820,11 @@ def main() -> None:
         if bd_username and bd_password:
             proxy_input = f"{bd_scheme}://{bd_username}:{bd_password}@{bd_host}:{bd_port}"
             try:
-                proxy_settings = parse_proxy_settings(proxy_input, proxy_type)
+                proxy_settings = parse_proxy_settings(proxy_input, None)
             except ValueError as exc:
                 parser.error(str(exc))
     if proxy_settings:
         print(f"Using proxy: {proxy_settings.server}")
-    elif use_anticaptcha:
-        print("Note: AntiCaptcha is running proxyless; Cloudflare may block (ERROR_IP_BLOCKED).")
 
     if args.retry_failed:
         retry_failed(
@@ -2963,14 +1832,10 @@ def main() -> None:
             brand_name=brand_name,
             brand_slug=brand_slug,
             base_url=base_url,
-            headless=args.headless,
             batch_size=args.batch,
             concurrency=args.concurrency,
             timeout=args.timeout,
             retries=args.retries,
-            use_anticaptcha=use_anticaptcha,
-            ac_concurrency=args.ac_concurrency,
-            ac_timeout=args.ac_timeout,
             backend=args.backend,
             impersonate=args.impersonate,
             retry_rounds=args.retry_rounds,
@@ -2978,11 +1843,6 @@ def main() -> None:
             retry_concurrency=args.retry_concurrency,
             rotate_credentials=not args.no_rotate_credentials,
             challenge_threshold=args.challenge_threshold,
-            pw_headless=not args.no_pw_headless,
-            include_price_history=args.price_history,
-            price_history_region=args.price_history_region,
-            price_history_only=args.price_history_only,
-            anti_captcha_key=anti_captcha_key,
             proxy_settings=proxy_settings,
             brightdata_api_key=brightdata_api_key,
             brightdata_zone=brightdata_zone,
@@ -3000,13 +1860,9 @@ def main() -> None:
             batch_size=args.batch,
             resume=args.resume,
             max_pages=args.max_pages,
-            headless=args.headless,
             concurrency=args.concurrency,
             timeout=args.timeout,
             retries=args.retries,
-            use_anticaptcha=use_anticaptcha,
-            ac_concurrency=args.ac_concurrency,
-            ac_timeout=args.ac_timeout,
             backend=args.backend,
             impersonate=args.impersonate,
             retry_rounds=args.retry_rounds,
@@ -3014,11 +1870,6 @@ def main() -> None:
             retry_concurrency=args.retry_concurrency,
             rotate_credentials=not args.no_rotate_credentials,
             challenge_threshold=args.challenge_threshold,
-            pw_headless=not args.no_pw_headless,
-            include_price_history=args.price_history,
-            price_history_region=args.price_history_region,
-            price_history_only=args.price_history_only,
-            anti_captcha_key=anti_captcha_key,
             proxy_settings=proxy_settings,
             brightdata_api_key=brightdata_api_key,
             brightdata_zone=brightdata_zone,
