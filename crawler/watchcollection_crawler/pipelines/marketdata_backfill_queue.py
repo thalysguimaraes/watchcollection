@@ -38,7 +38,7 @@ def iter_catalog_files(catalog_dir: Path) -> Iterator[Path]:
     for path in sorted(catalog_dir.glob("*.json")):
         if pattern.match(path.name) and not any(
             suffix in path.name
-            for suffix in ["_chrono24", "_thewatchapi", "_failed", "_checkpoint", "_listings", "_image_manifest"]
+            for suffix in ["_chrono24", "_failed", "_checkpoint", "_listings", "_image_manifest"]
         ):
             yield path
 
