@@ -17,3 +17,7 @@ API_DATA_DIR = Path(
         str(ROOT_DIR.parent / "api" / "data"),
     )
 )
+
+MARKETDATA_DB_PATH = Path(
+    os.getenv("MARKETDATA_DB_PATH", str(OUTPUT_DIR / "marketdata.sqlite"))
+)
