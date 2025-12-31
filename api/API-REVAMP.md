@@ -4,7 +4,24 @@ Mapped to the backlog you pasted (Epics A–G). Each PR is sized to review clean
 
 ---
 
-## PR 1 — Purge secret-leaking endpoints & add basic secret scanning
+## Implementation Status
+
+| PR | Status | Files |
+|----|--------|-------|
+| PR 1 | ✅ Done | `main.py`, `.github/workflows/secret-scan.yml`, `.gitleaks.toml` |
+| PR 2 | ✅ Done | `auth.py`, `routes/auth.py` |
+| PR 3 | ✅ Done | `auth.py`, `routes/auth.py` |
+| PR 4 | ✅ Done | `database.py`, `routes/market.py` |
+| PR 5 | ✅ Done | `database.py`, `routes/market.py` |
+| PR 6 | ✅ Done | `database.py`, `routes/admin.py` |
+| PR 7 | ✅ Done | `database.py`, `routes/admin.py` |
+| PR 8 | ✅ Done | `database.py`, `models/`, `alembic/` |
+| PR 9 | ✅ Done | `routes/ai.py` |
+| PR 10 | ✅ Done | `middleware/` |
+
+---
+
+## PR 1 — Purge secret-leaking endpoints & add basic secret scanning ✅
 
 **Goal:** No response ever contains vendor API keys; prevent regressions.
 
@@ -19,7 +36,7 @@ Mapped to the backlog you pasted (Epics A–G). Each PR is sized to review clean
 
 ---
 
-## PR 2 — Authentication foundation (user identity)
+## PR 2 — Authentication foundation (user identity) ✅
 
 **Goal:** Every request is attributable to a user so entitlements and rate limits can be enforced.
 
@@ -34,7 +51,7 @@ Mapped to the backlog you pasted (Epics A–G). Each PR is sized to review clean
 
 ---
 
-## PR 3 — Subscription verification + entitlement token
+## PR 3 — Subscription verification + entitlement token ✅
 
 **Goal:** Server can prove a user is Pro and issue a short-lived entitlement token for client/API use.
 
@@ -49,7 +66,7 @@ Mapped to the backlog you pasted (Epics A–G). Each PR is sized to review clean
 
 ---
 
-## PR 4 — `GET /market/history/{watchId}` endpoint
+## PR 4 — `GET /market/history/{watchId}` endpoint ✅
 
 **Goal:** Serve time-series data on demand with caching and coverage metadata.
 
@@ -64,7 +81,7 @@ Mapped to the backlog you pasted (Epics A–G). Each PR is sized to review clean
 
 ---
 
-## PR 5 — `GET /market/summary/{watchId}` endpoint
+## PR 5 — `GET /market/summary/{watchId}` endpoint ✅
 
 **Goal:** Fast card-level price summary for the app.
 
@@ -79,7 +96,7 @@ Mapped to the backlog you pasted (Epics A–G). Each PR is sized to review clean
 
 ---
 
-## PR 6 — Admin `/stats/ingest-runs` endpoint
+## PR 6 — Admin `/stats/ingest-runs` endpoint ✅
 
 **Goal:** Surface pipeline health without digging in logs.
 
@@ -94,7 +111,7 @@ Mapped to the backlog you pasted (Epics A–G). Each PR is sized to review clean
 
 ---
 
-## PR 7 — Admin `/stats/coverage` endpoint
+## PR 7 — Admin `/stats/coverage` endpoint ✅
 
 **Goal:** Quantify history coverage for dashboards.
 
@@ -108,7 +125,7 @@ Mapped to the backlog you pasted (Epics A–G). Each PR is sized to review clean
 
 ---
 
-## PR 8 — Introduce ORM + migrations
+## PR 8 — Introduce ORM + migrations ✅
 
 **Goal:** Make schema changes reproducible across dev/staging/prod.
 
@@ -123,7 +140,7 @@ Mapped to the backlog you pasted (Epics A–G). Each PR is sized to review clean
 
 ---
 
-## PR 9 — `POST /ai/identify` (Pro-only) with usage logging
+## PR 9 — `POST /ai/identify` (Pro-only) with usage logging ✅
 
 **Goal:** Server-side AI image identification that enforces entitlements and tracks cost.
 
@@ -139,7 +156,7 @@ Mapped to the backlog you pasted (Epics A–G). Each PR is sized to review clean
 
 ---
 
-## PR 10 — Rate limiting, circuit breaker, and structured tracing
+## PR 10 — Rate limiting, circuit breaker, and structured tracing ✅
 
 **Goal:** Protect paid endpoints and improve debuggability.
 
@@ -152,4 +169,3 @@ Mapped to the backlog you pasted (Epics A–G). Each PR is sized to review clean
 **Acceptance criteria**
 - Exceeding limits returns 429 with retry hints.
 - Logs show request_id + user_id for every call; traces can be correlated across services.
-

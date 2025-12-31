@@ -1,0 +1,22 @@
+title = "Watch Collection Gitleaks Config"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API Key"
+regex = '''sk-ant-[a-zA-Z0-9\-_]{95}'''
+keywords = ["sk-ant-"]
+
+[[rules]]
+id = "openai-api-key"
+description = "OpenAI API Key"
+regex = '''sk-proj-[a-zA-Z0-9\-_]{48}'''
+keywords = ["sk-proj-"]
+
+[allowlist]
+paths = [
+  '''\.md$''',
+  '''api/data/catalog_bundle\.json$''',
+]
