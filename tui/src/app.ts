@@ -61,7 +61,7 @@ type JobState = {
   status: 'running' | 'success' | 'error';
 };
 
-type Mode = 'normal' | 'addUrl' | 'addSlug' | 'confirmDeploy';
+type Mode = 'normal' | 'addUrl' | 'addSlug' | 'confirmDeploy' | 'utilities' | 'csvImportDir';
 type CatalogInfo = {
   version?: string;
   generatedAt?: string;
@@ -88,6 +88,7 @@ const [activeJob, setActiveJob] = createSignal<JobState | null>(null);
 const [mode, setMode] = createSignal<Mode>('normal');
 const [pendingUrl, setPendingUrl] = createSignal('');
 const [pendingSlug, setPendingSlug] = createSignal('');
+const [pendingCsvDir, setPendingCsvDir] = createSignal('');
 const [lastErrors, setLastErrors] = createSignal<Record<string, string>>({});
 const [catalogInfo, setCatalogInfo] = createSignal<CatalogInfo | null>(null);
 const [deployState, setDeployState] = createSignal<DeployState | null>(null);
@@ -582,6 +583,60 @@ const brandSlugInput = createTextInput({
   },
 });
 
+const csvDirInput = createTextInput({
+  placeholder: './csv-backfill',
+  isActive: () => mode() === 'csvImportDir',
+  onChange: (value) => setPendingCsvDir(value),
+  onSubmit: () => {
+    const dir = pendingCsvDir().trim();
+    if (!dir) {
+      setStatusMessage('Directory path required');
+      return;
+    }
+    setMode('normal');
+    void runUtility('csv-import', { csvDir: dir });
+  },
+  onCancel: () => {
+    setMode('normal');
+    setStatusMessage('Cancelled');
+  },
+});
+
+async function runUtility(util: 'backfill' | 'csv-import', params?: { csvDir?: string }) {
+  if (activeJob()?.status === 'running') {
+    setStatusMessage('A job is already running');
+    return;
+  }
+
+  if (util === 'backfill') {
+    resetLogs('[backfill] generating queue');
+    setStatusMessage('Generating backfill queue...');
+    setActiveJob({ phase: 'deploy', status: 'running' });
+    const code = await runCommand(
+      PYTHON_BIN,
+      ['-m', 'watchcollection_crawler.pipelines.marketdata_backfill_queue', '--output', 'backfill_queue.csv'],
+      CRAWLER_DIR,
+      '[backfill]'
+    );
+    setActiveJob({ phase: 'deploy', status: code === 0 ? 'success' : 'error' });
+    setStatusMessage(code === 0 ? 'Backfill queue generated' : `Backfill queue failed (exit ${code})`);
+  }
+
+  if (util === 'csv-import' && params?.csvDir) {
+    resetLogs('[csv-import] importing');
+    setStatusMessage('Importing CSV files...');
+    setActiveJob({ phase: 'deploy', status: 'running' });
+    const code = await runCommand(
+      PYTHON_BIN,
+      ['-m', 'watchcollection_crawler.pipelines.watchcharts_csv_import', '--csv-dir', params.csvDir],
+      CRAWLER_DIR,
+      '[csv-import]'
+    );
+    setActiveJob({ phase: 'deploy', status: code === 0 ? 'success' : 'error' });
+    setStatusMessage(code === 0 ? 'CSV import complete' : `CSV import failed (exit ${code})`);
+  }
+}
+
 function App() {
   const { exit } = useApp();
   const { columns } = useTerminalSize();
@@ -652,6 +707,12 @@ function App() {
       return;
     }
 
+    if (char === 'u') {
+      setMode('utilities');
+      setStatusMessage('Utilities: (b) Backfill queue  (i) CSV import  (q) Cancel');
+      return;
+    }
+
     if (scrollTarget() === 'brands') {
       if (char === 'j') {
         brandScroll.scrollBy(1);
@@ -678,6 +739,26 @@ function App() {
     if (char === 'n' || char === 'q') {
       setMode('normal');
       setStatusMessage('Deploy cancelled');
+    }
+  });
+
+  useInput((char) => {
+    if (mode() !== 'utilities') return;
+    if (char === 'b') {
+      setMode('normal');
+      void runUtility('backfill');
+      return;
+    }
+    if (char === 'i') {
+      setPendingCsvDir('');
+      csvDirInput.clear();
+      setMode('csvImportDir');
+      setStatusMessage('Enter CSV directory path');
+      return;
+    }
+    if (char === 'q' || char === 'n') {
+      setMode('normal');
+      setStatusMessage('Cancelled');
     }
   });
 
@@ -739,9 +820,9 @@ function App() {
     Text({}, truncate(' w  WatchCharts', sideContentWidth)),
     Text({}, truncate(' c  Chrono24 market', sideContentWidth)),
     Text({}, truncate(' g  Deploy', sideContentWidth)),
+    Text({}, truncate(' u  Utilities', sideContentWidth)),
     Text({}, truncate(' a  Add brand', sideContentWidth)),
     Text({}, truncate(' r  Refresh', sideContentWidth)),
-    Text({}, truncate(' l  Toggle scroll', sideContentWidth)),
     Text({}, truncate(' q  Quit', sideContentWidth)),
   ];
 
@@ -759,18 +840,33 @@ function App() {
     deploy?.error ? Text({ color: 'red' }, truncate(`error: ${deploy.error}`, sideContentWidth)) : null,
   ];
 
+  const modeBannerTitle = (() => {
+    const m = mode();
+    if (m === 'confirmDeploy') return 'Confirm deploy';
+    if (m === 'utilities') return 'Utilities';
+    if (m === 'csvImportDir') return 'CSV Import';
+    if (m === 'addUrl' || m === 'addSlug') return 'Add brand';
+    return '';
+  })();
+
   const modeBanner = mode() !== 'normal'
     ? Box(
         { borderStyle: 'round', padding: 1, marginTop: 1 },
-        Text({ bold: true }, mode() === 'confirmDeploy' ? 'Confirm deploy' : 'Add brand'),
+        Text({ bold: true }, modeBannerTitle),
         mode() === 'addUrl'
           ? renderTextInput(brandUrlInput, { fullWidth: true, borderStyle: 'round' })
           : null,
         mode() === 'addSlug'
           ? renderTextInput(brandSlugInput, { fullWidth: true, borderStyle: 'round' })
           : null,
+        mode() === 'csvImportDir'
+          ? renderTextInput(csvDirInput, { fullWidth: true, borderStyle: 'round' })
+          : null,
         mode() === 'confirmDeploy'
           ? Text({ color: 'yellow' }, 'Press y to deploy, n to cancel')
+          : null,
+        mode() === 'utilities'
+          ? Text({ color: 'yellow' }, '(b) Backfill queue  (i) CSV import  (q) Cancel')
           : null
       )
     : null;

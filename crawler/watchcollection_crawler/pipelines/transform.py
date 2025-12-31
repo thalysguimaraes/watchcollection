@@ -248,7 +248,6 @@ def iter_brand_files(input_dir: Path, brand_slug: Optional[str]) -> list[Path]:
         "_listings.json",
         "_failed.json",
         "_chrono24.json",
-        "_thewatchapi.json",
     )
 
     files = []
