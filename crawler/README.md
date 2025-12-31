@@ -13,7 +13,8 @@
 
 ## Common commands
 - WatchCharts crawl (catalog base):
-  - `python3 -m watchcollection_crawler.pipelines.watchcharts --entry-url "https://watchcharts.com/watches?filters=..." --brand "Rolex" --brand-slug rolex --backend brightdata`
+  - `python3 -m watchcollection_crawler.pipelines.watchcharts --entry-url "https://watchcharts.com/watches?filters=..." --brand "Rolex" --brand-slug rolex`
+  - Uses curl-impersonate by default. BrightData available as fallback via `--backend brightdata`.
 - Download WatchCharts images (optional, R2 upload supported):
   - `python3 -m watchcollection_crawler.pipelines.images --brand rolex`
 - Chrono24 market price enrichment:

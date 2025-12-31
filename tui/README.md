@@ -15,7 +15,7 @@
 
 ## Notes
 - Uses `crawler/output_watchcharts` for status detection.
-- Requires Bright Data for WatchCharts.
+- WatchCharts uses curl-impersonate by default. BrightData available as fallback via `--backend brightdata`.
 - Deploy uses `railway up` from `api/`.
 - TUI will prefer `crawler/venv/bin/python` or `crawler/.venv/bin/python`. Override via `TUI_PYTHON_BIN`.
 - Deploy service defaults to `watch-api`. Override via `TUI_RAILWAY_SERVICE`.
