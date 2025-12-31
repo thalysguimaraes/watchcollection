@@ -123,6 +123,7 @@ struct CatalogModelDTO: Codable {
 
     func toWatchModel() -> WatchModel {
         var model = WatchModel(
+            id: reference,
             reference: reference,
             displayName: displayName,
             collection: collection,

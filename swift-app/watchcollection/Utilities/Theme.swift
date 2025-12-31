@@ -143,6 +143,10 @@ extension Color {
         return Color(hue: Double(h), saturation: Double(s), brightness: max(0, Double(b) - amount))
     }
 
+    func forChartGradient() -> Color {
+        luminance > 0.6 ? darkened(by: 0.25) : self
+    }
+
     func vibrant(saturation satMult: Double = 1.3, brightness brightMult: Double = 0.9) -> Color {
         let uiColor = UIColor(self)
         var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0

@@ -10,7 +10,6 @@ struct CollectionListView: View {
     @State private var showDeleteConfirmation = false
     @State private var itemToDelete: CollectionItem?
     @State private var dataService = DataService()
-    @State private var showingAddOptions = false
     @AppStorage("defaultCurrency") private var defaultCurrency = "USD"
     @State private var convertedChartData: [ChartDataPoint]?
 

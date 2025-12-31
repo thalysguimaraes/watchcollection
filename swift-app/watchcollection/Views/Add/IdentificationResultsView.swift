@@ -68,8 +68,9 @@ struct IdentificationResultsView: View {
         VStack(spacing: Theme.Spacing.sm) {
             Image(systemName: matches.isEmpty ? "questionmark.circle" : "checkmark.circle.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(matches.isEmpty ? Theme.Colors.textSecondary : Theme.Colors.success)
+                .foregroundStyle(matches.isEmpty ? Theme.Colors.textSecondary : Theme.Colors.accent)
                 .scaleEffect(iconScale)
+                .symbolEffect(.bounce, value: iconScale)
 
             Text(matches.isEmpty ? "No Exact Match Found" : "Watch Identified!")
                 .font(.system(size: 22, weight: .bold))

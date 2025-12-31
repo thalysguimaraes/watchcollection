@@ -39,7 +39,7 @@ struct PortfolioChartView: View {
                     LinearGradient(
                         colors: [
                             Theme.Colors.chartSubtle.opacity(0.35),
-                            Theme.Colors.chartSubtle.opacity(0.08)
+                            Theme.Colors.chartSubtle.forChartGradient().opacity(0.08)
                         ],
                         startPoint: .top,
                         endPoint: .bottom

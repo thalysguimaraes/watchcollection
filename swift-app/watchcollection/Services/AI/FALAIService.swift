@@ -5,7 +5,15 @@ import os
 actor WatchAIService {
     static let shared = WatchAIService()
 
-    private static let geminiAPIKey = ProcessInfo.processInfo.environment["GEMINI_API_KEY"] ?? ""
+    private static let geminiAPIKey: String = {
+        if let url = Bundle.main.url(forResource: "Secrets", withExtension: "plist"),
+           let data = try? Data(contentsOf: url),
+           let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+           let key = plist["GEMINI_API_KEY"] as? String, !key.isEmpty {
+            return key
+        }
+        return ProcessInfo.processInfo.environment["GEMINI_API_KEY"] ?? ""
+    }()
     private static let geminiEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
     private let session: URLSession
@@ -55,10 +63,10 @@ actor WatchAIService {
                     ]
                 ]
             ],
-            "response_mime_type": "application/json",
             "generationConfig": [
                 "temperature": 0.2,
-                "maxOutputTokens": 256
+                "maxOutputTokens": 1024,
+                "responseMimeType": "application/json"
             ]
         ]
 
@@ -110,10 +118,10 @@ actor WatchAIService {
                     ]
                 ]
             ],
-            "response_mime_type": "application/json",
             "generationConfig": [
                 "temperature": 0.15,
-                "maxOutputTokens": 512
+                "maxOutputTokens": 2048,
+                "responseMimeType": "application/json"
             ]
         ]
 
@@ -208,6 +216,11 @@ actor WatchAIService {
                     throw WatchAIError.identificationFailed("Gemini status \(code)")
                 }
 
+                #if DEBUG
+                if let rawString = String(data: data, encoding: .utf8) {
+                    logger.debug("Raw Gemini response: \(rawString.prefix(1000))")
+                }
+                #endif
                 let geminiResponse = try decoder.decode(GeminiResponseDTO.self, from: data)
                 return geminiResponse
             } catch {
@@ -230,14 +243,21 @@ actor WatchAIService {
     private func parseJSON<T: Decodable>(_ text: String, as type: T.Type) throws -> T {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        #if DEBUG
+        logger.debug("Parsing JSON response: \(trimmed.prefix(500))")
+        #endif
+
         guard let data = trimmed.data(using: .utf8) else {
             throw WatchAIError.decodingFailed("Invalid UTF-8")
         }
 
         do {
             return try decoder.decode(T.self, from: data)
-        } catch {
-            // Attempt to recover from surrounding text
+        } catch let decodeError {
+            #if DEBUG
+            logger.error("Initial decode failed: \(decodeError.localizedDescription)")
+            #endif
+
             if let start = trimmed.firstIndex(of: "{") ?? trimmed.firstIndex(of: "[") {
                 if let end = trimmed.lastIndex(of: "}") ?? trimmed.lastIndex(of: "]") {
                     let jsonSlice = String(trimmed[start...end])
@@ -246,7 +266,7 @@ actor WatchAIService {
                     }
                 }
             }
-            throw WatchAIError.decodingFailed(error.localizedDescription)
+            throw WatchAIError.decodingFailed(decodeError.localizedDescription)
         }
     }
 }
