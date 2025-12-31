@@ -22,12 +22,41 @@
   - `python3 -m watchcollection_crawler.pipelines.transform`
   - `python3 -m watchcollection_crawler.pipelines.transform --brand-slug rolex`
 
+## Backfill Import
+
+Import WatchCharts CSV price history exports into the marketdata database:
+
+```bash
+# Import all CSVs from directory
+python3 -m watchcollection_crawler.pipelines.watchcharts_csv_import --csv-dir ./csv-backfill
+
+# Dry run (validate without inserting)
+python3 -m watchcollection_crawler.pipelines.watchcharts_csv_import --csv-dir ./csv-backfill --dry-run
+
+# Verbose output with per-row status
+python3 -m watchcollection_crawler.pipelines.watchcharts_csv_import --csv-dir ./csv-backfill --verbose
+
+# Limit to first N files (for testing)
+python3 -m watchcollection_crawler.pipelines.watchcharts_csv_import --csv-dir ./csv-backfill --limit 3
+```
+
+**CSV format expected:**
+- Filename: `<Brand Name> YYYY-MM-DD.csv` or `<Brand Name> YYYY-MM-DD (N).csv`
+- Columns: `Reference Number,Market Price (USD),Market Volatility`
+- Reference format: `<Brand> <Reference>` (e.g., "Rolex 16570")
+
+**Behavior:**
+- Re-importing same CSV won't duplicate (UNIQUE constraint on watchcharts_id + source + date)
+- Unmatched references logged as warnings, import continues
+- Emits run report with inserted/skipped counts
+
 ## Paths and env vars
 Defaults are relative to repo root, but can be overridden:
 - `WATCHCOLLECTION_OUTPUT_DIR`
 - `WATCHCHARTS_OUTPUT_DIR`
 - `WATCHCHARTS_IMAGES_DIR`
 - `WATCHCOLLECTION_API_DATA_DIR`
+- `MARKETDATA_DB_PATH` (SQLite market data database)
 - `WATCHCHARTS_ENV_FILE` (optional env file path)
 - Bright Data (WatchCharts):
   - `BRIGHTDATA_API_KEY`

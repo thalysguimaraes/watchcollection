@@ -17,6 +17,17 @@ from .models import (
     IngestStats,
     SnapshotSource,
 )
+from .import_watchcharts_csv import (
+    ParsedCSVRow,
+    normalize_brand_name,
+    parse_filename,
+    parse_reference_cell,
+    parse_price,
+    parse_volatility,
+    parse_csv_row,
+    build_catalog_lookup,
+    iter_csv_files,
+)
 
 __all__ = [
     "get_conn",
@@ -34,4 +45,13 @@ __all__ = [
     "IngestRun",
     "IngestStats",
     "SnapshotSource",
+    "ParsedCSVRow",
+    "normalize_brand_name",
+    "parse_filename",
+    "parse_reference_cell",
+    "parse_price",
+    "parse_volatility",
+    "parse_csv_row",
+    "build_catalog_lookup",
+    "iter_csv_files",
 ]
