@@ -14,9 +14,15 @@ Anything outside of these sources is considered legacy and should not be reintro
 4) Deploy API (Railway)
 
 ## Output files
-- Base: `output_watchcharts/{brand_slug}.json`
-- Chrono24 market price: `output_watchcharts/{brand_slug}_chrono24.json` (JSON) + `output/marketdata.sqlite` (DB)
+- Base catalog: `output_watchcharts/{brand_slug}.json` (source of truth)
+- Chrono24 enrichment: `output_watchcharts/{brand_slug}_chrono24.json` (optional, for `market_price` fallback only)
+- Market data DB: `output/marketdata.sqlite` (canonical `market_price` + `market_price_history`)
 - API bundle: `api/data/catalog_bundle.json`
+
+## Transform field precedence
+- `market_price`: DB → `_chrono24.json` → base `.json`
+- `market_price_history`: DB only
+- All other fields: base `.json` only
 
 ## Commands (manual)
 - WatchCharts crawl (Bright Data required):
