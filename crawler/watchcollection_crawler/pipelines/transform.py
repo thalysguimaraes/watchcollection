@@ -177,9 +177,6 @@ def transform_brand(wc_data: dict, image_manifest: dict) -> dict:
 
 def iter_brand_files(input_dir: Path, brand_slug: Optional[str]) -> list[Path]:
     if brand_slug:
-        preferred = input_dir / f"{brand_slug}_thewatchapi.json"
-        if preferred.exists():
-            return [preferred]
         chrono = input_dir / f"{brand_slug}_chrono24.json"
         if chrono.exists():
             return [chrono]
@@ -209,10 +206,6 @@ def iter_brand_files(input_dir: Path, brand_slug: Optional[str]) -> list[Path]:
         if json_file.name.endswith(skip_suffixes):
             continue
         slug = json_file.stem
-        preferred = input_dir / f"{slug}_thewatchapi.json"
-        if preferred.exists():
-            files.append(preferred)
-            continue
         chrono = input_dir / f"{slug}_chrono24.json"
         if chrono.exists():
             files.append(chrono)

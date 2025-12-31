@@ -44,7 +44,7 @@ const BRAND_CONTENT_WIDTH = BRAND_PANEL_WIDTH - 4;
 const LOG_PANEL_PADDING = 2;
 const SIDE_PANEL_PADDING = 4;
 
-type Phase = 'watchcharts' | 'chrono24' | 'thewatchapi' | 'deploy';
+type Phase = 'watchcharts' | 'chrono24' | 'deploy';
 type PhaseStatus = 'ready' | 'missing' | 'running' | 'error';
 
 type BrandEntry = {
@@ -53,7 +53,6 @@ type BrandEntry = {
   entryUrl?: string | null;
   watchchartsFile: string;
   chrono24File: string;
-  thewatchapiFile: string;
 };
 
 type JobState = {
@@ -79,7 +78,6 @@ type DeployState = {
 type BrandStats = {
   total: number;
   market: number;
-  history: number;
 };
 
 const [brands, setBrands] = createSignal<BrandEntry[]>([]);
@@ -192,7 +190,6 @@ function listBrandFiles(): BrandEntry[] {
   const files = fs.readdirSync(OUTPUT_DIR).filter((file) => file.endsWith('.json'));
   const skipSuffixes = [
     '_chrono24.json',
-    '_thewatchapi.json',
     '_failed.json',
     '_failed_history.json',
     '_failed_downloads.json',
@@ -208,7 +205,6 @@ function listBrandFiles(): BrandEntry[] {
     const slug = file.replace('.json', '');
     const watchchartsFile = path.join(OUTPUT_DIR, file);
     const chrono24File = path.join(OUTPUT_DIR, `${slug}_chrono24.json`);
-    const thewatchapiFile = path.join(OUTPUT_DIR, `${slug}_thewatchapi.json`);
     const data = safeReadJson(watchchartsFile);
     const rawName = (data?.brand as string) || slug;
     const entryUrl = (data?.entry_url as string) || null;
@@ -218,7 +214,6 @@ function listBrandFiles(): BrandEntry[] {
       entryUrl,
       watchchartsFile,
       chrono24File,
-      thewatchapiFile,
     };
   });
 }
@@ -264,9 +259,6 @@ function phaseStatusFor(brand: BrandEntry, phase: Phase): PhaseStatus {
   }
   if (phase === 'chrono24') {
     return fs.existsSync(brand.chrono24File) ? 'ready' : 'missing';
-  }
-  if (phase === 'thewatchapi') {
-    return fs.existsSync(brand.thewatchapiFile) ? 'ready' : 'missing';
   }
   return 'missing';
 }
@@ -468,46 +460,6 @@ async function runPhase(phase: Phase, brand?: BrandEntry): Promise<boolean> {
     );
   }
 
-  if (phase === 'thewatchapi' && brand) {
-    resetLogs(`[thewatchapi] ${brand.slug}`);
-    code = await runCommand(
-      PYTHON_BIN,
-      ['-m', 'watchcollection_crawler.pipelines.thewatchapi_history', '--brand', brand.slug],
-      CRAWLER_DIR,
-      '[thewatchapi]'
-    );
-    if (code === 0) {
-      const fallbackArgs = [
-        '-m',
-        'watchcollection_crawler.pipelines.watchcharts',
-        '--brand',
-        brand.name,
-        '--brand-slug',
-        brand.slug,
-        '--backend',
-        'brightdata',
-        '--price-history-only',
-        '--concurrency',
-        '2',
-        '--retries',
-        '3',
-        '--timeout',
-        '60',
-      ];
-      if (brand.entryUrl) {
-        fallbackArgs.push('--entry-url', brand.entryUrl);
-      }
-      if (fs.existsSync(WATCHCHARTS_COOKIES_FILE)) {
-        fallbackArgs.push('--cookies-file', WATCHCHARTS_COOKIES_FILE);
-      }
-      appendLog('[fallback] filling missing history from WatchCharts');
-      const fallbackCode = await runCommand(PYTHON_BIN, fallbackArgs, CRAWLER_DIR, '[watchcharts]');
-      if (fallbackCode !== 0) {
-        appendLog(`[fallback] watchcharts history failed (exit ${fallbackCode})`);
-      }
-    }
-  }
-
   if (phase === 'deploy') {
     resetLogs('[deploy] transform');
     const transformCode = await runCommand(
@@ -565,14 +517,11 @@ async function runNewBrandFlow(url: string, slug: string) {
     entryUrl: url,
     watchchartsFile: path.join(OUTPUT_DIR, `${slug}.json`),
     chrono24File: path.join(OUTPUT_DIR, `${slug}_chrono24.json`),
-    thewatchapiFile: path.join(OUTPUT_DIR, `${slug}_thewatchapi.json`),
   };
 
   const okWatchcharts = await runPhase('watchcharts', brand);
   if (!okWatchcharts) return;
-  const okChrono = await runPhase('chrono24', brand);
-  if (!okChrono) return;
-  await runPhase('thewatchapi', brand);
+  await runPhase('chrono24', brand);
 }
 
 function startAddBrand() {
@@ -690,11 +639,6 @@ function App() {
       return;
     }
 
-    if (char === 't') {
-      void runPhase('thewatchapi', selected);
-      return;
-    }
-
     if (char === 'g') {
       setMode('confirmDeploy');
       setStatusMessage('Press y to deploy or n to cancel');
@@ -741,7 +685,6 @@ function App() {
   const selected = list[selectedIndex()];
   const watchSummary = summarizePhase(list, 'watchcharts');
   const chronoSummary = summarizePhase(list, 'chrono24');
-  const historySummary = summarizePhase(list, 'thewatchapi');
   const catalog = catalogInfo();
   const deploy = deployState();
   const logWidth = Math.max(40, columns - 4);
@@ -755,7 +698,6 @@ function App() {
         const isSelected = idx === selectedIndex();
         const watchStatus = phaseStatusFor(brand, 'watchcharts');
         const chronoStatus = phaseStatusFor(brand, 'chrono24');
-        const historyStatus = phaseStatusFor(brand, 'thewatchapi');
         const nameLabel = `${isSelected ? '>' : ' '} ${brand.name}`;
         const paddedName = truncate(nameLabel, brandNameMax).padEnd(brandNameMax, ' ');
         return Box(
@@ -763,9 +705,7 @@ function App() {
           Text({ color: isSelected ? 'cyan' : 'white', bold: isSelected }, `${paddedName} `),
           statusBadge('W', watchStatus),
           Text({}, ' '),
-          statusBadge('C', chronoStatus),
-          Text({}, ' '),
-          statusBadge('H', historyStatus)
+          statusBadge('C', chronoStatus)
         );
       })
     : [Text({ color: 'gray' }, 'No brands found. Press a to add one.')];
@@ -784,14 +724,12 @@ function App() {
           { flexDirection: 'row' },
           statusBadge('W', phaseStatusFor(selected, 'watchcharts')),
           Text({}, ' '),
-          statusBadge('C', phaseStatusFor(selected, 'chrono24')),
-          Text({}, ' '),
-          statusBadge('H', phaseStatusFor(selected, 'thewatchapi'))
+          statusBadge('C', phaseStatusFor(selected, 'chrono24'))
         ),
         Text({ color: 'gray' }, 'Coverage:'),
         Text(
           { color: 'gray' },
-          `W: ${stats[selected.slug]?.total ?? 0}  C: ${stats[selected.slug]?.market ?? 0}  H: ${stats[selected.slug]?.history ?? 0}`
+          `W: ${stats[selected.slug]?.total ?? 0}  C: ${stats[selected.slug]?.market ?? 0}`
         ),
       ]
     : [Text({ color: 'gray' }, 'Select a brand')];
@@ -800,7 +738,6 @@ function App() {
     Text({ bold: true }, truncate('Shortcuts', sideContentWidth)),
     Text({}, truncate(' w  WatchCharts', sideContentWidth)),
     Text({}, truncate(' c  Chrono24 market', sideContentWidth)),
-    Text({}, truncate(' t  TheWatchAPI', sideContentWidth)),
     Text({}, truncate(' g  Deploy', sideContentWidth)),
     Text({}, truncate(' a  Add brand', sideContentWidth)),
     Text({}, truncate(' r  Refresh', sideContentWidth)),
@@ -858,12 +795,7 @@ function App() {
       Text({ color: 'green' }, `C ok ${chronoSummary.ready}`),
       Text({ color: 'yellow' }, ` run ${chronoSummary.running}`),
       Text({ color: 'red' }, ` err ${chronoSummary.error}`),
-      Text({ color: 'gray' }, ` miss ${chronoSummary.missing}`),
-      Text({ color: 'gray' }, ' | '),
-      Text({ color: 'green' }, `H ok ${historySummary.ready}`),
-      Text({ color: 'yellow' }, ` run ${historySummary.running}`),
-      Text({ color: 'red' }, ` err ${historySummary.error}`),
-      Text({ color: 'gray' }, ` miss ${historySummary.missing}`)
+      Text({ color: 'gray' }, ` miss ${chronoSummary.missing}`)
     ),
     Box(
       { flexDirection: 'row', marginTop: 1, gap: 2 },
@@ -926,7 +858,6 @@ function buildBrandStats(list: BrandEntry[]): Record<string, BrandStats> {
   list.forEach((brand) => {
     let total = 0;
     let market = 0;
-    let history = 0;
 
     if (fs.existsSync(brand.watchchartsFile)) {
       const data = safeReadJson(brand.watchchartsFile);
@@ -939,14 +870,8 @@ function buildBrandStats(list: BrandEntry[]): Record<string, BrandStats> {
       market = models.filter((m) => m && m.market_price_usd != null).length;
       total = Math.max(total, models.length);
     }
-    if (fs.existsSync(brand.thewatchapiFile)) {
-      const data = safeReadJson(brand.thewatchapiFile);
-      const models = Array.isArray(data?.models) ? (data?.models as any[]) : [];
-      history = models.filter((m) => m && m.market_price_history && Array.isArray(m.market_price_history.points) && m.market_price_history.points.length > 0).length;
-      total = Math.max(total, models.length);
-    }
 
-    stats[brand.slug] = { total, market, history };
+    stats[brand.slug] = { total, market };
   });
   return stats;
 }

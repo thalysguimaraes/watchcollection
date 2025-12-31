@@ -3,7 +3,6 @@
 ## Architecture (2025-12)
 - WatchCharts: catalog base (brands, models, specs, photos, retail price)
 - Chrono24: market price (listing-based median with outlier removal)
-- TheWatchAPI: historical price series
 
 ## Structure
 - `watchcollection_crawler/`: package code
@@ -19,15 +18,9 @@
   - `python3 -m watchcollection_crawler.pipelines.images --brand rolex`
 - Chrono24 market price enrichment:
   - `python3 -m watchcollection_crawler.pipelines.chrono24_market --brand rolex --listings 40 --min-listings 6`
-- TheWatchAPI price history enrichment:
-  - `python3 -m watchcollection_crawler.pipelines.thewatchapi_history --brand rolex`
 - Transform WatchCharts output into API bundle:
   - `python3 -m watchcollection_crawler.pipelines.transform`
   - `python3 -m watchcollection_crawler.pipelines.transform --brand-slug rolex`
-
-## FlareSolverr
-Start the local Cloudflare bypass service (Chrono24 pipelines):
-- `./scripts/start_flaresolverr.sh`
 
 ## Paths and env vars
 Defaults are relative to repo root, but can be overridden:
@@ -35,15 +28,12 @@ Defaults are relative to repo root, but can be overridden:
 - `WATCHCHARTS_OUTPUT_DIR`
 - `WATCHCHARTS_IMAGES_DIR`
 - `WATCHCOLLECTION_API_DATA_DIR`
-- `FLARESOLVERR_URL`
 - `WATCHCHARTS_ENV_FILE` (optional env file path)
 - Bright Data (WatchCharts):
   - `BRIGHTDATA_API_KEY`
   - `BRIGHTDATA_WEB_ACCESS_ZONE`
   - `BRIGHTDATA_ENDPOINT` (default: https://api.brightdata.com/request)
   - `BRIGHTDATA_FORMAT` (default: raw)
-- TheWatchAPI:
-  - `THEWATCHAPI_API_KEY`
 - Images (R2 uploads, optional):
   - `R2_PUBLIC_URL`
   - `R2_ENDPOINT`
